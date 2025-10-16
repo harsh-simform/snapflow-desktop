@@ -12,11 +12,13 @@ export default function AuthPage() {
     confirmPassword: '',
   })
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
   const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    setSuccess('')
     setLoading(true)
 
     try {
@@ -42,7 +44,15 @@ export default function AuthPage() {
           formData.password
         )
         if (result.success) {
-          router.push('/home')
+          // Show success message
+          setSuccess('Account created successfully! Redirecting to login...')
+          // Clear form
+          setFormData({ name: '', email: '', password: '', confirmPassword: '' })
+          // Redirect to login page after 2 seconds
+          setTimeout(() => {
+            setIsLogin(true)
+            setSuccess('')
+          }, 2000)
         } else {
           setError(result.error || 'Signup failed')
         }
@@ -64,8 +74,12 @@ export default function AuthPage() {
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-2xl mb-4">
               <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M13 10V3L4 14h7v7l9-11h-7z"
+                />
               </svg>
             </div>
             <h1 className="text-4xl font-bold text-gray-100 mb-2">
@@ -84,6 +98,15 @@ export default function AuthPage() {
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
               </svg>
               {error}
+            </div>
+          )}
+
+          {success && (
+            <div className="mb-4 p-4 bg-green-500/20 border border-green-500/30 text-green-400 rounded-lg text-sm flex items-start">
+              <svg className="w-5 h-5 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+              {success}
             </div>
           )}
 
@@ -179,6 +202,7 @@ export default function AuthPage() {
               onClick={() => {
                 setIsLogin(!isLogin)
                 setError('')
+                setSuccess('')
                 setFormData({ name: '', email: '', password: '', confirmPassword: '' })
               }}
               className="text-blue-400 hover:text-blue-300 text-sm font-medium transition-colors duration-200"

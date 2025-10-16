@@ -52,6 +52,10 @@ export class CaptureService {
         );
       }
 
+      // Get all SnapFlow windows to filter them out
+      const allWindows = BrowserWindow.getAllWindows();
+      const snapflowWindowIds = allWindows.map((win) => `window:${win.id}:0`);
+
       const sources = await desktopCapturer.getSources({
         types: ["screen", "window"],
         thumbnailSize: screen.getPrimaryDisplay().workAreaSize,
@@ -65,7 +69,52 @@ export class CaptureService {
 
       let source;
       if (options.mode === "fullscreen") {
-        source = sources.find((s) => s.id.startsWith("screen"));
+        // Get all displays to determine which screen to capture
+        const displays = screen.getAllDisplays();
+        const primaryDisplay = screen.getPrimaryDisplay();
+
+        // Find which display has the SnapFlow window
+        let snapflowDisplayId = primaryDisplay.id;
+        for (const win of allWindows) {
+          if (win && !win.isDestroyed()) {
+            const winBounds = win.getBounds();
+            const winCenter = {
+              x: winBounds.x + winBounds.width / 2,
+              y: winBounds.y + winBounds.height / 2
+            };
+
+            // Check which display contains the window center
+            for (const display of displays) {
+              const bounds = display.bounds;
+              if (
+                winCenter.x >= bounds.x &&
+                winCenter.x < bounds.x + bounds.width &&
+                winCenter.y >= bounds.y &&
+                winCenter.y < bounds.y + bounds.height
+              ) {
+                snapflowDisplayId = display.id;
+                break;
+              }
+            }
+          }
+        }
+
+        // If there are multiple displays, prefer one without SnapFlow
+        if (displays.length > 1) {
+          const alternativeDisplay = displays.find(d => d.id !== snapflowDisplayId);
+          if (alternativeDisplay) {
+            // Find the screen source for the alternative display
+            source = sources.find((s) =>
+              s.id.startsWith("screen") &&
+              s.display_id === alternativeDisplay.id.toString()
+            );
+          }
+        }
+
+        // Fallback to any screen if no alternative found
+        if (!source) {
+          source = sources.find((s) => s.id.startsWith("screen"));
+        }
       } else if (options.mode === "window" && options.windowId) {
         source = sources.find((s) => s.id === options.windowId);
       } else {
@@ -129,13 +178,28 @@ export class CaptureService {
   async getAvailableWindows(): Promise<
     { id: string; name: string; thumbnail: string }[]
   > {
+    // Get all SnapFlow windows to filter them out
+    const allWindows = BrowserWindow.getAllWindows();
+    const snapflowWindowIds = allWindows.map((win) => `window:${win.id}:0`);
+
     const sources = await desktopCapturer.getSources({
       types: ["window"],
       thumbnailSize: { width: 150, height: 150 },
     });
 
     return sources
-      .filter((source) => source.name !== "")
+      .filter((source) => {
+        // Filter out unnamed windows
+        if (source.name === "") return false;
+
+        // Filter out SnapFlow windows by ID
+        if (snapflowWindowIds.includes(source.id)) return false;
+
+        // Filter out SnapFlow windows by name
+        if (source.name.toLowerCase().includes("snapflow")) return false;
+
+        return true;
+      })
       .map((source) => ({
         id: source.id,
         name: source.name,

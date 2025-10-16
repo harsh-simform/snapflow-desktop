@@ -31,6 +31,19 @@ export default function AnnotatePage() {
   const [color, setColor] = useState("#EF4444");
   const [strokeWidth, setStrokeWidth] = useState(3);
   const [fillOpacity, setFillOpacity] = useState(0);
+
+  // Color presets
+  const colorPresets = [
+    { name: "Red", value: "#EF4444" },
+    { name: "Orange", value: "#F97316" },
+    { name: "Yellow", value: "#EAB308" },
+    { name: "Green", value: "#22C55E" },
+    { name: "Blue", value: "#3B82F6" },
+    { name: "Purple", value: "#A855F7" },
+    { name: "Pink", value: "#EC4899" },
+    { name: "White", value: "#FFFFFF" },
+    { name: "Black", value: "#000000" },
+  ];
   const [shapes, setShapes] = useState<any[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -433,185 +446,277 @@ export default function AnnotatePage() {
         <title>Annotate Screenshot - SnapFlow</title>
       </Head>
       <div className="h-screen bg-gray-950 flex flex-col overflow-hidden">
-        {/* Top Toolbar */}
-        <div className="bg-gray-900 border-b border-gray-800 px-4 py-3 flex-shrink-0">
-          <div className="flex items-center justify-between">
-            {/* Left: Tools */}
-            <div className="flex items-center gap-3">
-              {/* Tool Group */}
-              <div className="flex items-center gap-1 bg-gray-800 rounded-lg p-1">
-                <Button
-                  variant={tool === "select" ? "primary" : "ghost"}
-                  size="sm"
-                  onClick={() => setTool("select")}
-                  title="Select (V)"
-                  className="h-9 w-9 p-0"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5" />
-                  </svg>
-                </Button>
-                <Button
-                  variant={tool === "pen" ? "primary" : "ghost"}
-                  size="sm"
-                  onClick={() => setTool("pen")}
-                  title="Pen (P)"
-                  className="h-9 w-9 p-0"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                  </svg>
-                </Button>
-                <Button
-                  variant={tool === "arrow" ? "primary" : "ghost"}
-                  size="sm"
-                  onClick={() => setTool("arrow")}
-                  title="Arrow (A)"
-                  className="h-9 w-9 p-0"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                  </svg>
-                </Button>
-                <Button
-                  variant={tool === "rectangle" ? "primary" : "ghost"}
-                  size="sm"
-                  onClick={() => setTool("rectangle")}
-                  title="Rectangle (R)"
-                  className="h-9 w-9 p-0"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5z" />
-                  </svg>
-                </Button>
-                <Button
-                  variant={tool === "circle" ? "primary" : "ghost"}
-                  size="sm"
-                  onClick={() => setTool("circle")}
-                  title="Circle (C)"
-                  className="h-9 w-9 p-0"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </Button>
-                <Button
-                  variant={tool === "text" ? "primary" : "ghost"}
-                  size="sm"
-                  onClick={() => setTool("text")}
-                  title="Text (T)"
-                  className="h-9 w-9 p-0"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                </Button>
+        {/* Top Header */}
+        <div className="bg-gray-900 border-b border-gray-800 px-3 sm:px-6 py-3 flex-shrink-0">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center space-x-2 sm:space-x-3 min-w-0">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 rounded-lg sm:rounded-xl flex items-center justify-center flex-shrink-0">
+                <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
               </div>
-
-              <div className="h-6 w-px bg-gray-700" />
-
-              {/* Color */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-400 uppercase font-medium">Color</span>
-                <input
-                  type="color"
-                  value={color}
-                  onChange={(e) => setColor(e.target.value)}
-                  className="w-9 h-9 rounded border border-gray-700 cursor-pointer bg-gray-800"
-                />
-              </div>
-
-              {/* Width */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-400 uppercase font-medium">Width</span>
-                <select
-                  value={strokeWidth}
-                  onChange={(e) => setStrokeWidth(Number(e.target.value))}
-                  className="h-9 px-3 rounded border border-gray-700 bg-gray-800 text-gray-100 text-sm"
-                >
-                  <option value={1}>1px</option>
-                  <option value={2}>2px</option>
-                  <option value={3}>3px</option>
-                  <option value={5}>5px</option>
-                  <option value={8}>8px</option>
-                </select>
-              </div>
-
-              {/* Fill */}
-              {(tool === "rectangle" || tool === "circle") && (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-400 uppercase font-medium">Fill</span>
-                  <select
-                    value={fillOpacity}
-                    onChange={(e) => setFillOpacity(Number(e.target.value))}
-                    className="h-9 px-3 rounded border border-gray-700 bg-gray-800 text-gray-100 text-sm"
-                  >
-                    <option value={0}>None</option>
-                    <option value={0.2}>20%</option>
-                    <option value={0.5}>50%</option>
-                    <option value={1}>100%</option>
-                  </select>
-                </div>
-              )}
-
-              <div className="h-6 w-px bg-gray-700" />
-
-              {/* Actions */}
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleUndo}
-                  disabled={shapes.length === 0}
-                  title="Undo (Ctrl+Z)"
-                  className="h-9 w-9 p-0"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                  </svg>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleDelete}
-                  disabled={!selectedId}
-                  title="Delete (Del)"
-                  className="h-9 w-9 p-0"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleClearAll}
-                  disabled={shapes.length === 0}
-                  title="Clear All"
-                  className="h-9 w-9 p-0 hover:bg-red-500/10 hover:text-red-400"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </Button>
+              <div className="min-w-0">
+                <h1 className="text-base sm:text-xl font-bold text-gray-100 truncate">Annotate Screenshot</h1>
+                <p className="hidden sm:block text-xs text-gray-400">Add annotations, shapes, and text to your capture</p>
               </div>
             </div>
-
-            {/* Right: Save/Cancel */}
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={handleCancel} className="h-9">
-                Cancel
+            <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+              <Button variant="ghost" onClick={handleCancel} className="h-9 sm:h-10 px-3 sm:px-4">
+                <svg className="w-4 h-4 sm:mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                <span className="hidden sm:inline">Cancel</span>
               </Button>
-              <Button variant="primary" size="sm" onClick={handleSave} disabled={saving} className="h-9">
-                {saving ? "Saving..." : "Save"}
+              <Button variant="primary" onClick={handleSave} disabled={saving} className="h-9 sm:h-10 px-3 sm:px-6">
+                <svg className="w-4 h-4 sm:mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                <span className="hidden sm:inline">{saving ? "Saving..." : "Save Screenshot"}</span>
+                <span className="sm:hidden">{saving ? "..." : "Save"}</span>
               </Button>
             </div>
           </div>
         </div>
 
-        {/* Canvas Area - Full height */}
-        <div className="flex-1 overflow-hidden bg-gray-950" ref={containerRef}>
-          <div className="w-full h-full flex items-center justify-center p-4">
+        {/* Properties & Actions Toolbar */}
+        <div className="bg-gray-900/50 border-b border-gray-800 px-3 sm:px-6 py-2 sm:py-3 flex-shrink-0 overflow-x-auto">
+          <div className="flex items-center gap-3 sm:gap-4 min-w-max">
+            {/* Colors Section */}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <label className="text-xs font-semibold text-gray-400 hidden sm:block">Colors:</label>
+              <div className="flex items-center gap-1 sm:gap-1.5 bg-gray-900 rounded-lg p-1.5 border border-gray-800">
+                {colorPresets.slice(0, 6).map((preset) => (
+                  <button
+                    key={preset.value}
+                    onClick={() => setColor(preset.value)}
+                    className={`w-7 h-7 sm:w-8 sm:h-8 rounded-md transition-all border-2 ${
+                      color === preset.value
+                        ? "border-blue-500 scale-110 shadow-lg"
+                        : "border-gray-700 hover:border-gray-500 hover:scale-105"
+                    }`}
+                    style={{ backgroundColor: preset.value }}
+                    title={preset.name}
+                  />
+                ))}
+                <div className="hidden md:flex">
+                  {colorPresets.slice(6).map((preset) => (
+                    <button
+                      key={preset.value}
+                      onClick={() => setColor(preset.value)}
+                      className={`w-8 h-8 rounded-md transition-all border-2 ml-1.5 ${
+                        color === preset.value
+                          ? "border-blue-500 scale-110 shadow-lg"
+                          : "border-gray-700 hover:border-gray-500 hover:scale-105"
+                      }`}
+                      style={{ backgroundColor: preset.value }}
+                      title={preset.name}
+                    />
+                  ))}
+                </div>
+                <div className="w-px h-7 sm:h-8 bg-gray-800 mx-0.5" />
+                <div className="relative">
+                  <input
+                    type="color"
+                    value={color}
+                    onChange={(e) => setColor(e.target.value)}
+                    className="w-7 h-7 sm:w-8 sm:h-8 rounded-md border-2 border-gray-700 cursor-pointer"
+                    title="Custom color"
+                  />
+                  <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 sm:w-3.5 sm:h-3.5 bg-gray-800 rounded-full flex items-center justify-center border border-gray-700">
+                    <svg className="w-1.5 h-1.5 sm:w-2 sm:h-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="h-10 sm:h-14 w-px bg-gray-800" />
+
+            {/* Properties Section */}
+            <div className="flex flex-col gap-1 flex-shrink-0">
+              <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider hidden sm:block">Properties</label>
+              <div className="flex items-center gap-1.5 sm:gap-2 bg-gray-900 rounded-lg p-1.5 sm:p-2 border border-gray-800">
+                {/* Width */}
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[10px] text-gray-500 font-medium hidden sm:block">Width</span>
+                  <select
+                    value={strokeWidth}
+                    onChange={(e) => setStrokeWidth(Number(e.target.value))}
+                    className="h-8 sm:h-9 px-2 sm:px-3 rounded-md border border-gray-700 bg-gray-800 text-gray-100 text-xs font-medium cursor-pointer hover:border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 outline-none"
+                  >
+                    <option value={1}>1px</option>
+                    <option value={2}>2px</option>
+                    <option value={3}>3px</option>
+                    <option value={5}>5px</option>
+                    <option value={8}>8px</option>
+                  </select>
+                </div>
+
+                {/* Fill */}
+                {(tool === "rectangle" || tool === "circle") && (
+                  <>
+                    <div className="w-px h-10 bg-gray-800" />
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[10px] text-gray-500 font-medium hidden sm:block">Fill</span>
+                      <select
+                        value={fillOpacity}
+                        onChange={(e) => setFillOpacity(Number(e.target.value))}
+                        className="h-8 sm:h-9 px-2 sm:px-3 rounded-md border border-gray-700 bg-gray-800 text-gray-100 text-xs font-medium cursor-pointer hover:border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 outline-none"
+                      >
+                        <option value={0}>None</option>
+                        <option value={0.2}>20%</option>
+                        <option value={0.5}>50%</option>
+                        <option value={1}>100%</option>
+                      </select>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="h-10 sm:h-14 w-px bg-gray-800" />
+
+            {/* Actions Section */}
+            <div className="flex flex-col gap-1 flex-shrink-0">
+              <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider hidden sm:block">Actions</label>
+              <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-1 border border-gray-800">
+                <Button
+                  variant="ghost"
+                  onClick={handleUndo}
+                  disabled={shapes.length === 0}
+                  title="Undo last action (Ctrl+Z)"
+                  className="h-10 sm:h-12 px-2 sm:px-3 flex-col gap-0.5"
+                >
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                  </svg>
+                  <span className="text-[10px] sm:text-xs">Undo</span>
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={handleDelete}
+                  disabled={!selectedId}
+                  title="Delete selected shape (Del)"
+                  className="h-10 sm:h-12 px-2 sm:px-3 flex-col gap-0.5"
+                >
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  <span className="text-[10px] sm:text-xs">Delete</span>
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={handleClearAll}
+                  disabled={shapes.length === 0}
+                  title="Clear all annotations"
+                  className="h-10 sm:h-12 px-2 sm:px-3 flex-col gap-0.5 hover:bg-red-500/10 hover:text-red-400"
+                >
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  <span className="text-[10px] sm:text-xs">Clear</span>
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Main Content Area with Sidebar and Canvas */}
+        <div className="flex-1 flex overflow-hidden bg-gray-950">
+          {/* Left Sidebar - Tools */}
+          <div className="w-16 sm:w-20 bg-gray-900 border-r border-gray-800 flex-shrink-0 overflow-y-auto">
+            <div className="flex flex-col gap-2 p-2">
+              <button
+                onClick={() => setTool("select")}
+                className={`flex flex-col items-center justify-center w-full aspect-square rounded-lg transition-all ${
+                  tool === "select"
+                    ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
+                    : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"
+                }`}
+                title="Select and move shapes (V)"
+              >
+                <svg className="w-5 h-5 sm:w-6 sm:h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5" />
+                </svg>
+                <span className="text-[9px] sm:text-[10px] font-medium">Select</span>
+              </button>
+              <button
+                onClick={() => setTool("pen")}
+                className={`flex flex-col items-center justify-center w-full aspect-square rounded-lg transition-all ${
+                  tool === "pen"
+                    ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
+                    : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"
+                }`}
+                title="Draw freehand (P)"
+              >
+                <svg className="w-5 h-5 sm:w-6 sm:h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
+                <span className="text-[9px] sm:text-[10px] font-medium">Pen</span>
+              </button>
+              <button
+                onClick={() => setTool("arrow")}
+                className={`flex flex-col items-center justify-center w-full aspect-square rounded-lg transition-all ${
+                  tool === "arrow"
+                    ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
+                    : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"
+                }`}
+                title="Draw arrow (A)"
+              >
+                <svg className="w-5 h-5 sm:w-6 sm:h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                </svg>
+                <span className="text-[9px] sm:text-[10px] font-medium">Arrow</span>
+              </button>
+              <button
+                onClick={() => setTool("rectangle")}
+                className={`flex flex-col items-center justify-center w-full aspect-square rounded-lg transition-all ${
+                  tool === "rectangle"
+                    ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
+                    : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"
+                }`}
+                title="Draw rectangle (R)"
+              >
+                <svg className="w-5 h-5 sm:w-6 sm:h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <rect x="4" y="4" width="16" height="16" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <span className="text-[9px] sm:text-[10px] font-medium">Box</span>
+              </button>
+              <button
+                onClick={() => setTool("circle")}
+                className={`flex flex-col items-center justify-center w-full aspect-square rounded-lg transition-all ${
+                  tool === "circle"
+                    ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
+                    : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"
+                }`}
+                title="Draw circle (C)"
+              >
+                <svg className="w-5 h-5 sm:w-6 sm:h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <circle cx="12" cy="12" r="9" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <span className="text-[9px] sm:text-[10px] font-medium">Circle</span>
+              </button>
+              <button
+                onClick={() => setTool("text")}
+                className={`flex flex-col items-center justify-center w-full aspect-square rounded-lg transition-all ${
+                  tool === "text"
+                    ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
+                    : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"
+                }`}
+                title="Add text (T)"
+              >
+                <svg className="w-5 h-5 sm:w-6 sm:h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10" />
+                </svg>
+                <span className="text-[9px] sm:text-[10px] font-medium">Text</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Canvas Area */}
+          <div className="flex-1 overflow-hidden bg-gray-950" ref={containerRef}>
+            <div className="w-full h-full flex items-center justify-center p-2 sm:p-4">
             {screenshot && Stage && Layer && image ? (
               <div className="shadow-2xl">
                 <Stage
@@ -669,28 +774,29 @@ export default function AnnotatePage() {
                 </div>
               </div>
             )}
+            </div>
           </div>
         </div>
 
         {/* Bottom Panel - Details */}
-        <div className="bg-gray-900 border-t border-gray-800 px-4 py-3 flex-shrink-0">
-          <div className="flex items-center gap-4">
-            <div className="flex-1">
+        <div className="bg-gray-900 border-t border-gray-800 px-3 sm:px-4 py-2 sm:py-3 flex-shrink-0">
+          <div className="flex flex-col sm:flex-row items-stretch gap-2 sm:gap-4">
+            <div className="flex-1 min-w-0">
               <Input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Title (required)"
-                className="w-full h-8 text-sm"
+                className="w-full h-8 sm:h-9 text-xs sm:text-sm"
               />
             </div>
-            <div className="flex-1">
-              <Input
-                type="text"
+            <div className="flex-1 min-w-0">
+              <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Description (optional)"
-                className="w-full h-8 text-sm"
+                rows={1}
+                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-gray-100 rounded-lg text-xs sm:text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all duration-200 hover:border-gray-600"
               />
             </div>
           </div>
