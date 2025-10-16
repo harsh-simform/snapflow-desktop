@@ -4,6 +4,7 @@ interface LocalImageProps {
   src: string;
   alt: string;
   className?: string;
+  style?: React.CSSProperties;
   onError?: () => void;
 }
 
@@ -11,6 +12,7 @@ export const LocalImage: React.FC<LocalImageProps> = ({
   src,
   alt,
   className = "",
+  style,
   onError,
 }) => {
   const [dataUrl, setDataUrl] = useState<string | null>(null);
@@ -60,10 +62,10 @@ export const LocalImage: React.FC<LocalImageProps> = ({
 
   if (loading) {
     return (
-      <div className={`${className} animate-pulse bg-gray-800`}>
-        <div className="w-full h-full flex items-center justify-center">
+      <div className="flex items-center justify-center min-h-[400px] bg-gray-900/30 rounded-lg">
+        <div className="flex flex-col items-center justify-center p-12">
           <svg
-            className="w-8 h-8 text-gray-600 animate-spin"
+            className="w-12 h-12 text-gray-600 animate-spin mb-4"
             fill="none"
             viewBox="0 0 24 24"
           >
@@ -81,6 +83,7 @@ export const LocalImage: React.FC<LocalImageProps> = ({
               d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
             />
           </svg>
+          <p className="text-sm text-gray-400">Loading image...</p>
         </div>
       </div>
     );
@@ -90,5 +93,5 @@ export const LocalImage: React.FC<LocalImageProps> = ({
     return null;
   }
 
-  return <img src={dataUrl} alt={alt} className={className} />;
+  return <img src={dataUrl} alt={alt} className={className} style={style} />;
 };

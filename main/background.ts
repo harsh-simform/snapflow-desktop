@@ -286,6 +286,8 @@ app.on("window-all-closed", () => {
 ipcMain.handle("user:create", async (_event, { name, email, password }) => {
   try {
     const user = await authService.createUser(name, email, password);
+    // Store user in session (same as login)
+    sessionManager.setUser(user);
     return { success: true, data: user };
   } catch (error) {
     return { success: false, error: error.message };

@@ -288,18 +288,6 @@ export default function HomePage() {
                   {issues.filter((i) => i.type === "screenshot").length}
                 </span>
               </Button>
-              <Button
-                variant={filter === "recording" ? "primary" : "outline"}
-                size="sm"
-                onClick={() => setFilter("recording")}
-                disabled
-                title="Coming Soon"
-              >
-                Recordings
-                <span className="ml-2 px-1.5 py-0.5 bg-yellow-500/20 text-yellow-400 rounded text-xs font-medium">
-                  Coming Soon
-                </span>
-              </Button>
             </div>
 
             <Input
@@ -525,23 +513,23 @@ export default function HomePage() {
 
         {/* Full Resolution Preview Dialog */}
         <Dialog open={previewDialogOpen} onOpenChange={setPreviewDialogOpen}>
-          <DialogContent hideCloseButton className="max-w-[98vw] w-[98vw] h-[98vh] p-0 overflow-hidden bg-gray-950 border-gray-800">
+          <DialogContent hideCloseButton className="max-w-[95vw] w-[95vw] h-[95vh] p-0 overflow-hidden bg-gray-950 border-gray-800">
             {previewIssue && (
-              <div className="flex flex-col h-full">
+              <div className="flex flex-col h-full w-full">
                 {/* Header */}
-                <div className="px-6 py-3 border-b border-gray-800 bg-gray-900/95 backdrop-blur-sm flex items-center justify-between">
-                  <div className="flex items-center gap-4 flex-1 min-w-0">
-                    <DialogHeader className="flex-1 min-w-0">
-                      <DialogTitle className="text-lg font-semibold text-gray-100 truncate">
+                <div className="px-4 sm:px-6 py-3 border-b border-gray-800 bg-gray-900/95 backdrop-blur-sm flex items-center justify-between flex-shrink-0">
+                  <div className="flex items-center gap-2 sm:gap-4 flex-1 min-w-0">
+                    <div className="flex-1 min-w-0">
+                      <h2 className="text-base sm:text-lg font-semibold text-gray-100 truncate">
                         {previewIssue.title}
-                      </DialogTitle>
+                      </h2>
                       {previewIssue.description && (
-                        <DialogDescription className="text-sm text-gray-400 truncate mt-1">
+                        <p className="text-xs sm:text-sm text-gray-400 truncate mt-0.5">
                           {previewIssue.description}
-                        </DialogDescription>
+                        </p>
                       )}
-                    </DialogHeader>
-                    <div className="flex items-center gap-3 flex-shrink-0">
+                    </div>
+                    <div className="flex items-center gap-1 sm:gap-3 flex-shrink-0">
                       <span className="text-xs text-gray-500 font-mono bg-gray-800/50 px-2 py-1 rounded">
                         {previewIssue.id}
                       </span>
@@ -602,13 +590,13 @@ export default function HomePage() {
                 </div>
 
                 {/* Image Preview - Full Screen */}
-                <div className="flex-1 overflow-auto bg-gray-950">
-                  <div className="flex items-center justify-center w-full h-full p-6">
+                <div className="flex-1 w-full overflow-auto bg-gray-950">
+                  <div className="min-h-full w-full flex items-center justify-center p-4 sm:p-6">
                     {previewIssue.filePath ? (
                       <LocalImage
                         src={previewIssue.filePath}
                         alt={previewIssue.title}
-                        className="max-w-full max-h-full object-contain"
+                        className="max-w-full h-auto object-contain rounded-lg"
                         onError={() => {
                           console.error('Failed to load full-resolution image:', previewIssue.filePath);
                         }}
