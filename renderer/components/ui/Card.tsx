@@ -11,7 +11,7 @@ export const Card = React.forwardRef<HTMLDivElement, CardProps>(
       <div
         ref={ref}
         className={clsx(
-          'rounded-xl border border-gray-200 bg-white shadow-soft',
+          'rounded-xl border border-gray-800 bg-gray-900 shadow-soft',
           hover && 'transition-shadow hover:shadow-medium',
           className
         )}
@@ -44,7 +44,7 @@ export const CardTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <h3
     ref={ref}
-    className={clsx('text-lg font-semibold leading-none tracking-tight', className)}
+    className={clsx('text-lg font-semibold leading-none tracking-tight text-gray-100', className)}
     {...props}
   />
 ))
@@ -57,7 +57,7 @@ export const CardDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <p
     ref={ref}
-    className={clsx('text-sm text-gray-500', className)}
+    className={clsx('text-sm text-gray-400', className)}
     {...props}
   />
 ))

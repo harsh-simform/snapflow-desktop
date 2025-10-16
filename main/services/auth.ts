@@ -1,119 +1,210 @@
-import Store from 'electron-store'
-import bcrypt from 'bcryptjs'
-import { v4 as uuidv4 } from 'uuid'
+import bcrypt from "bcryptjs";
+import { prisma } from "../utils/prisma";
 
 interface User {
-  id: string
-  name: string
-  email: string
-  passwordHash: string
-  createdAt: string
+  id: string;
+  name: string;
+  email: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
-const store = new Store<{ user: User | null }>({
-  name: 'snapflow-auth',
-  defaults: {
-    user: null,
-  },
-})
+interface UserWithPassword extends User {
+  passwordHash: string;
+}
 
 export class AuthService {
-  async createUser(name: string, email: string, password: string): Promise<Omit<User, 'passwordHash'>> {
-    const existingUser = store.get('user')
+  /**
+   * Create a new user account
+   */
+  async createUser(
+    name: string,
+    email: string,
+    password: string
+  ): Promise<User> {
+    // Check if user already exists
+    const existingUser = await prisma.user.findUnique({
+      where: { email },
+    });
+
     if (existingUser) {
-      throw new Error('User already exists')
+      throw new Error("User with this email already exists");
     }
 
-    const passwordHash = await bcrypt.hash(password, 10)
-    const user: User = {
-      id: uuidv4(),
-      name,
-      email,
-      passwordHash,
-      createdAt: new Date().toISOString(),
-    }
+    // Hash password
+    const passwordHash = await bcrypt.hash(password, 10);
 
-    store.set('user', user)
+    // Create user
+    const user = await prisma.user.create({
+      data: {
+        name,
+        email,
+        passwordHash,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
 
-    const { passwordHash: _, ...userWithoutPassword } = user
-    return userWithoutPassword
+    return user;
   }
 
-  async login(email: string, password: string): Promise<Omit<User, 'passwordHash'>> {
-    const user = store.get('user')
+  /**
+   * Login with email and password
+   */
+  async login(email: string, password: string): Promise<User> {
+    // Find user by email
+    const user = await prisma.user.findUnique({
+      where: { email },
+    });
+
     if (!user) {
-      throw new Error('User not found')
+      throw new Error("Invalid email or password");
     }
 
-    if (user.email !== email) {
-      throw new Error('Invalid email or password')
-    }
-
-    const isValidPassword = await bcrypt.compare(password, user.passwordHash)
+    // Verify password
+    const isValidPassword = await bcrypt.compare(password, user.passwordHash);
     if (!isValidPassword) {
-      throw new Error('Invalid email or password')
+      throw new Error("Invalid email or password");
     }
 
-    const { passwordHash: _, ...userWithoutPassword } = user
-    return userWithoutPassword
+    // Return user without password
+    const { passwordHash: _, ...userWithoutPassword } = user;
+    return userWithoutPassword;
   }
 
-  getUser(): Omit<User, 'passwordHash'> | null {
-    const user = store.get('user')
+  /**
+   * Get user by ID
+   */
+  async getUserById(userId: string): Promise<User | null> {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    return user;
+  }
+
+  /**
+   * Get user by email
+   */
+  async getUserByEmail(email: string): Promise<User | null> {
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    return user;
+  }
+
+  /**
+   * Check if any user exists (for initial setup)
+   */
+  async hasAnyUser(): Promise<boolean> {
+    const count = await prisma.user.count();
+    return count > 0;
+  }
+
+  /**
+   * Update user profile
+   */
+  async updateUser(
+    userId: string,
+    updates: Partial<Pick<User, "name" | "email">>
+  ): Promise<User> {
+    // If email is being updated, check it's not taken
+    if (updates.email) {
+      const existingUser = await prisma.user.findUnique({
+        where: { email: updates.email },
+      });
+
+      if (existingUser && existingUser.id !== userId) {
+        throw new Error("Email is already in use");
+      }
+    }
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: updates,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    return user;
+  }
+
+  /**
+   * Change user password
+   */
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string
+  ): Promise<void> {
+    // Find user with password
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
     if (!user) {
-      return null
+      throw new Error("User not found");
     }
 
-    const { passwordHash: _, ...userWithoutPassword } = user
-    return userWithoutPassword
-  }
-
-  hasUser(): boolean {
-    return store.get('user') !== null
-  }
-
-  async updateUser(updates: Partial<Pick<User, 'name' | 'email'>>): Promise<Omit<User, 'passwordHash'>> {
-    const user = store.get('user')
-    if (!user) {
-      throw new Error('User not found')
-    }
-
-    const updatedUser = {
-      ...user,
-      ...updates,
-    }
-
-    store.set('user', updatedUser)
-
-    const { passwordHash: _, ...userWithoutPassword } = updatedUser
-    return userWithoutPassword
-  }
-
-  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
-    const user = store.get('user')
-    if (!user) {
-      throw new Error('User not found')
-    }
-
-    const isValidPassword = await bcrypt.compare(currentPassword, user.passwordHash)
+    // Verify current password
+    const isValidPassword = await bcrypt.compare(
+      currentPassword,
+      user.passwordHash
+    );
     if (!isValidPassword) {
-      throw new Error('Invalid current password')
+      throw new Error("Invalid current password");
     }
 
-    const newPasswordHash = await bcrypt.hash(newPassword, 10)
-    user.passwordHash = newPasswordHash
-    store.set('user', user)
+    // Hash new password and update
+    const newPasswordHash = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash: newPasswordHash },
+    });
   }
 
+  /**
+   * Delete user account
+   */
+  async deleteUser(userId: string): Promise<void> {
+    await prisma.user.delete({
+      where: { id: userId },
+    });
+  }
+
+  /**
+   * Logout (no-op for now, but can be used for session cleanup)
+   */
   logout(): void {
-    // For now, we don't delete the user, just signal logout
-    // You can implement session-based auth here if needed
-    // For a local desktop app, we keep the user stored
-  }
-
-  deleteUser(): void {
-    store.delete('user')
+    // In a local desktop app, logout doesn't delete the user
+    // Just signals the UI to clear the session
+    // Can be extended with session management if needed
   }
 }
 
-export const authService = new AuthService()
+export const authService = new AuthService();
