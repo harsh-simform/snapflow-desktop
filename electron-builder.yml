@@ -1,6 +1,6 @@
-appId: com.example.nextron
-productName: My Nextron App
-copyright: Copyright © 2018 Yoshihide Shiono
+appId: com.snapflow.desktop
+productName: SnapFlow
+copyright: Copyright © 2025 SnapFlow Team
 directories:
   output: dist
   buildResources: resources
@@ -9,4 +9,104 @@ files:
     filter:
       - package.json
       - app
+      - node_modules/.prisma/**/*
+      - "!node_modules/.prisma/client/libquery_engine-*"
+      - node_modules/@prisma/client/**/*
+  - from: prisma
+    to: prisma
+    filter:
+      - schema.prisma
+
+# Include native modules
+asarUnpack:
+  - node_modules/.prisma/**/*
+  - node_modules/@prisma/client/**/*
+  - node_modules/sharp/**/*
+
+mac:
+  category: public.app-category.productivity
+  icon: resources/icon.icns
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+
+dmg:
+  title: ${productName} ${version}
+  icon: resources/icon.icns
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+  window:
+    width: 540
+    height: 380
+
+win:
+  icon: resources/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+        - ia32
+    - target: portable
+      arch:
+        - x64
+  publisherName: SnapFlow Team
+  verifyUpdateCodeSignature: false
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: ${productName}
+  perMachine: false
+  deleteAppDataOnUninstall: false
+
+linux:
+  icon: resources/icon.png
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+    - target: rpm
+      arch:
+        - x64
+  category: Utility
+  maintainer: SnapFlow Team
+  vendor: SnapFlow Team
+  description: Screenshot & Screen Recording Tool with Issue Tracking
+
+# Build configuration
+extraMetadata:
+  main: app/background.js
+
+# Don't publish automatically
 publish: null
+
+# Compression
+compression: normal
+
+# Node integration
+electronLanguages:
+  - en
+  - en-US
+
+# Environment
+buildVersion: ${version}

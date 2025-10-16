@@ -7,10 +7,20 @@ export class StorageManager {
   private baseDir: string
 
   constructor(customPath?: string) {
-    this.baseDir = customPath || path.join(app.getPath('home'), 'SnapFlow')
+    // Delay initialization until app is ready
+    if (customPath) {
+      this.baseDir = customPath
+    } else {
+      // Will be initialized in ensureDirectories
+      this.baseDir = ''
+    }
   }
 
   async ensureDirectories() {
+    // Initialize baseDir if not set
+    if (!this.baseDir) {
+      this.baseDir = path.join(app.getPath('home'), 'SnapFlow')
+    }
     await fs.mkdir(this.baseDir, { recursive: true })
     await fs.mkdir(path.join(this.baseDir, 'Captures'), { recursive: true })
   }
