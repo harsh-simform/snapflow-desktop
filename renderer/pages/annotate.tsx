@@ -56,7 +56,48 @@ export default function AnnotatePage() {
   const [editingTextValue, setEditingTextValue] = useState("");
 
   useEffect(() => {
+    console.log("[Annotate] Component mounted, initializing...");
+
+    // Load user first - this is critical for saving screenshots
     loadUser();
+
+    // First, try to get any pending screenshot from main process
+    const checkPendingScreenshot = async () => {
+      console.log("[Annotate] Checking for pending screenshot...");
+      try {
+        const result = await window.api.getPendingScreenshot();
+        if (result.success && result.data) {
+          console.log("[Annotate] Found pending screenshot!", {
+            dataUrlLength: result.data.dataUrl?.length || 0,
+            mode: result.data.mode
+          });
+          setScreenshot(result.data.dataUrl);
+        } else {
+          console.log("[Annotate] No pending screenshot found");
+          // If no screenshot is available and this is a fresh load,
+          // the user probably navigated here by mistake
+          // Wait a bit to see if screenshot arrives via IPC
+          setTimeout(() => {
+            if (!screenshot) {
+              console.warn("[Annotate] No screenshot loaded after timeout, user may need to capture first");
+            }
+          }, 2000);
+        }
+      } catch (error) {
+        console.error("[Annotate] Error getting pending screenshot:", error);
+      }
+    };
+    checkPendingScreenshot();
+
+    // Set up global function for direct injection (backup method)
+    (window as any).__setScreenshot = (data: any) => {
+      console.log("[Annotate] Screenshot set via direct injection!", {
+        hasDataUrl: !!data?.dataUrl,
+        dataUrlLength: data?.dataUrl?.length || 0,
+        mode: data?.mode
+      });
+      setScreenshot(data.dataUrl);
+    };
 
     // Dynamically load react-konva to avoid SSR issues
     let mounted = true;
@@ -79,37 +120,43 @@ export default function AnnotatePage() {
         toast.error("Failed to load image editor");
       });
 
-    // Listen for screenshot captured event
+    // Listen for screenshot captured event (fallback method for IPC-based captures)
+    console.log("[Annotate] Setting up screenshot listener...");
     const cleanup = window.api.onScreenshotCaptured((data: any) => {
+      console.log("[Annotate] Screenshot received via IPC event!", {
+        hasDataUrl: !!data?.dataUrl,
+        dataUrlLength: data?.dataUrl?.length || 0,
+        mode: data?.mode
+      });
       setScreenshot(data.dataUrl);
     });
 
-    // Keyboard shortcuts
+    // Keyboard shortcuts (only for actions, not tool selection)
     const handleKeyDown = (e: KeyboardEvent) => {
       if (editingTextId) return;
 
+      // Check if user is typing in an input field or textarea
+      const target = e.target as HTMLElement;
+      const isInputField = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
+
       if (e.key === "Delete" || e.key === "Backspace") {
-        e.preventDefault();
-        handleDelete();
+        // Only prevent default and delete shape if NOT in an input field
+        if (!isInputField) {
+          e.preventDefault();
+          handleDelete();
+        }
       } else if (e.key === "Escape") {
         setSelectedId(null);
         setTool("select");
       } else if ((e.metaKey || e.ctrlKey) && e.key === "z") {
-        e.preventDefault();
-        handleUndo();
-      } else if (e.key === "v" || e.key === "V") {
-        setTool("select");
-      } else if (e.key === "p" || e.key === "P") {
-        setTool("pen");
-      } else if (e.key === "a" || e.key === "A") {
-        setTool("arrow");
-      } else if (e.key === "r" || e.key === "R") {
-        setTool("rectangle");
-      } else if (e.key === "c" || e.key === "C") {
-        setTool("circle");
-      } else if (e.key === "t" || e.key === "T") {
-        setTool("text");
+        // Only prevent undo if NOT in an input field
+        if (!isInputField) {
+          e.preventDefault();
+          handleUndo();
+        }
       }
+      // Removed keyboard shortcuts for tool selection (V, P, A, R, C, T)
+      // Tools should only be selectable via mouse clicks
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -117,6 +164,7 @@ export default function AnnotatePage() {
     return () => {
       mounted = false;
       cleanup();
+      delete (window as any).__setScreenshot;
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [editingTextId, selectedId, shapes]);
@@ -147,13 +195,30 @@ export default function AnnotatePage() {
   }, [screenshot]);
 
   const loadUser = async () => {
-    const result = await window.api.getUser();
-    if (result.success && result.data) {
-      setCurrentUser(result.data);
+    try {
+      const result = await window.api.getUser();
+      if (result.success && result.data) {
+        setCurrentUser(result.data);
+      } else {
+        console.warn("[Annotate] Failed to load user:", result.error);
+        // Don't redirect immediately - user might still be logged in
+        // Only redirect on save if currentUser is still null
+      }
+    } catch (error) {
+      console.error("[Annotate] Error loading user:", error);
     }
   };
 
   const handleMouseDown = (e: any) => {
+    // Check if clicked on empty area (background)
+    const clickedOnEmpty = e.target === e.target.getStage() || e.target.getClassName() === 'Image';
+
+    if (clickedOnEmpty && tool === "select") {
+      // Deselect when clicking on empty area in select mode
+      setSelectedId(null);
+      return;
+    }
+
     if (tool === "select") return;
 
     const stage = e.target.getStage();
@@ -228,6 +293,7 @@ export default function AnnotatePage() {
         fontFamily: "Inter, sans-serif",
       };
       setShapes([...shapes, newShape]);
+      setSelectedId(null); // Don't auto-select the newly created text
       setTool("select");
     }
   };
@@ -277,6 +343,7 @@ export default function AnnotatePage() {
     setShapes([...shapes, currentShape]);
     setCurrentShape(null);
     setIsDrawing(false);
+    setSelectedId(null); // Don't auto-select the newly drawn shape
     setTool("select");
   };
 
@@ -332,10 +399,13 @@ export default function AnnotatePage() {
     }
 
     if (!currentUser) {
+      console.error("[Annotate] Cannot save - no current user. Redirecting to auth.");
       toast.error("User not found. Please login again.");
       router.push("/auth");
       return;
     }
+
+    console.log("[Annotate] Saving screenshot with user:", currentUser.id);
 
     if (!stageRef.current) {
       toast.error("Editor not ready");
@@ -634,7 +704,7 @@ export default function AnnotatePage() {
                     ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
                     : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"
                 }`}
-                title="Select and move shapes (V)"
+                title="Select and move shapes"
               >
                 <svg className="w-5 h-5 sm:w-6 sm:h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5" />
@@ -648,7 +718,7 @@ export default function AnnotatePage() {
                     ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
                     : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"
                 }`}
-                title="Draw freehand (P)"
+                title="Draw freehand"
               >
                 <svg className="w-5 h-5 sm:w-6 sm:h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
@@ -662,7 +732,7 @@ export default function AnnotatePage() {
                     ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
                     : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"
                 }`}
-                title="Draw arrow (A)"
+                title="Draw arrow"
               >
                 <svg className="w-5 h-5 sm:w-6 sm:h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
@@ -676,7 +746,7 @@ export default function AnnotatePage() {
                     ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
                     : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"
                 }`}
-                title="Draw rectangle (R)"
+                title="Draw rectangle"
               >
                 <svg className="w-5 h-5 sm:w-6 sm:h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <rect x="4" y="4" width="16" height="16" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
@@ -690,7 +760,7 @@ export default function AnnotatePage() {
                     ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
                     : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"
                 }`}
-                title="Draw circle (C)"
+                title="Draw circle"
               >
                 <svg className="w-5 h-5 sm:w-6 sm:h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <circle cx="12" cy="12" r="9" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
@@ -704,10 +774,10 @@ export default function AnnotatePage() {
                     ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
                     : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"
                 }`}
-                title="Add text (T)"
+                title="Add text"
               >
                 <svg className="w-5 h-5 sm:w-6 sm:h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7h16M12 7v13m-4 0h8" />
                 </svg>
                 <span className="text-[9px] sm:text-[10px] font-medium">Text</span>
               </button>
