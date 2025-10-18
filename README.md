@@ -1,10 +1,6 @@
 # SnapFlow Desktop
 
 <p align="center">
-  <img src="https://i.imgur.com/a9QWW0v.png" alt="SnapFlow Desktop">
-</p>
-
-<p align="center">
   <strong>A powerful Electron-based screenshot capture and annotation tool with issue tracking and platform integrations</strong>
 </p>
 
