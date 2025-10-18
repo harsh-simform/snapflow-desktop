@@ -31,8 +31,9 @@
 ### Screenshot Capture
 - 📸 **Full Screen Capture** - Capture entire display with multi-monitor support
 - 🪟 **Window Capture** - Select and capture individual application windows
-- ✂️ **Region Selection** - Draw custom rectangular area to capture
-- 🖥️ **Smart Display Handling** - Automatically selects best display for capture
+- ✂️ **Region Selection** - Draw custom rectangular area to capture with transparent overlay
+- 📋 **Auto Clipboard Copy** - Screenshots automatically copied to clipboard for instant pasting
+- 🖥️ **High-DPI Support** - Perfect pixel-accurate captures on Retina displays
 - 🔐 **Permission Management** - Checks and guides macOS Screen Recording permissions
 
 ### Image Annotation
@@ -60,11 +61,11 @@
 - 🌐 **Multi-Platform Sync** - Sync single issue to multiple platforms
 
 ### Security & Authentication
-- 🔒 **User Authentication** - Email-based signup and login
-- 🛡️ **Password Security** - bcrypt hashing with 10 salt rounds
+- 🔒 **User Authentication** - Email-based signup and login via Supabase Auth
+- 🛡️ **Secure Session Management** - JWT-based authentication with automatic token refresh
 - 💾 **Session Persistence** - Stay logged in across app restarts
-- 🗄️ **PostgreSQL Database** - Secure user data storage
-- 🔐 **Context Isolation** - Electron security best practices
+- 🗄️ **Supabase Backend** - Secure cloud database with real-time capabilities
+- 🔐 **Context Isolation** - Electron security best practices with IPC bridge
 
 ### User Experience
 - 🎨 **Dark Mode UI** - Beautiful dark theme interface with Radix UI components
@@ -94,9 +95,10 @@
 ### Backend (Main Process)
 - **Runtime**: [Electron](https://www.electronjs.org/) 34.0.0
 - **Framework**: [Nextron](https://github.com/saltyshiomix/nextron) 9.5.0 (Next.js + Electron)
-- **Database**: [Supabase](https://supabase.com/) (PostgreSQL + Auth + Real-time)
-- **Image Processing**: [Sharp](https://sharp.pixelplumbing.com/) 0.33.2
-- **Storage**: [electron-store](https://github.com/sindresorhus/electron-store) 8.2.0
+- **Database**: [Supabase](https://supabase.com/) (PostgreSQL + Auth + Storage)
+- **Image Processing**: [Sharp](https://sharp.pixelplumbing.com/) 0.33.2 (thumbnail generation)
+- **Capture**: Native Electron `desktopCapturer` API with `nativeImage.crop()`
+- **Storage**: Local file system with organized directory structure
 - **HTTP Client**: [axios](https://axios-http.com/) 1.6.7
 
 ### Development Tools
@@ -233,17 +235,21 @@ For detailed setup instructions, see [SUPABASE_SETUP.md](SUPABASE_SETUP.md)
 #### From System Tray
 1. Click the SnapFlow icon in your system tray
 2. Select capture mode:
-   - **Full Screen** - Capture entire display
-   - **Area** - Draw selection rectangle
-   - **Window** - Choose specific window
-3. Screenshot opens in annotation editor
+   - **Capture Full Screen** - Capture entire display
+   - **Capture Area** - Draw selection rectangle with transparent overlay
+3. Screenshot opens in annotation editor and is copied to clipboard
 
-#### From App Window
-1. Click **New Capture** button
-2. Select capture mode
-3. For region selection, drag to create selection rectangle
-4. For window selection, click on window thumbnail
+#### Area Selection
+1. Semi-transparent overlay appears over your screen
+2. Click and drag to select the area you want to capture
+3. Release mouse to capture the selected region
+4. Screenshot is automatically copied to clipboard
 5. Press `ESC` to cancel
+
+**Tips**:
+- Screenshots are automatically copied to clipboard for instant pasting
+- Perfect for sharing quickly in Slack, Discord, or any app (Cmd+V / Ctrl+V)
+- High-DPI displays (Retina) are fully supported with pixel-perfect accuracy
 
 ### Annotating Screenshots
 
@@ -286,7 +292,8 @@ For detailed setup instructions, see [SUPABASE_SETUP.md](SUPABASE_SETUP.md)
 
 ### Keyboard Shortcuts
 
-- **ESC**: Cancel capture/close dialog
+- **ESC**: Cancel area/window selection or close dialog
+- **Cmd/Ctrl + V**: Paste captured screenshot (auto-copied to clipboard)
 - **Cmd/Ctrl + Z**: Undo (in annotation editor)
 - **Cmd/Ctrl + Shift + Z**: Redo (in annotation editor)
 
@@ -298,20 +305,18 @@ For detailed setup instructions, see [SUPABASE_SETUP.md](SUPABASE_SETUP.md)
 snapflow-desktop/
 ├── main/                          # Electron main process
 │   ├── background.ts              # App lifecycle, IPC handlers, tray menu
-│   ├── preload.ts                 # Context bridge API (window.api)
+│   ├── preload.ts                 # Context bridge API (window.ipc, window.api)
 │   ├── services/                  # Business logic modules
-│   │   ├── auth.ts                # User authentication
-│   │   ├── capture.ts             # Screenshot capture logic
-│   │   ├── issues.ts              # Issue CRUD operations
-│   │   ├── connectors.ts          # GitHub/Zoho integrations
-│   │   └── config.ts              # Database configuration
+│   │   ├── auth.ts                # Supabase authentication
+│   │   ├── capture.ts             # Screenshot capture with nativeImage
+│   │   ├── issues.ts              # Issue CRUD with Supabase
+│   │   └── connectors.ts          # GitHub/Zoho integrations
 │   ├── utils/                     # Utilities
-│   │   ├── prisma.ts              # Prisma client singleton
-│   │   ├── session.ts             # Session management
-│   │   ├── storage.ts             # File system storage
-│   │   └── id-generator.ts        # ID generation
+│   │   ├── supabase.ts            # Supabase client singleton
+│   │   ├── session.ts             # Local session management
+│   │   └── storage.ts             # Local file system storage
 │   └── helpers/
-│       └── create-window.ts       # Window creation utility
+│       └── create-window.ts       # BrowserWindow creation utility
 │
 ├── renderer/                      # Next.js frontend application
 │   ├── pages/                     # React pages
@@ -345,13 +350,13 @@ snapflow-desktop/
 │   ├── tailwind.config.js         # Tailwind CSS configuration
 │   └── tsconfig.json              # TypeScript config
 │
-├── prisma/
-│   ├── schema.prisma              # Database schema
-│   └── migrations/                # Migration files
+├── resources/                     # App resources
+│   ├── icon.png                   # App icon (macOS dock/taskbar)
+│   ├── icon.icns                  # macOS app icon
+│   ├── icon.ico                   # Windows app icon
+│   └── tray-icon.png              # System tray icon
 │
-├── resources/                     # App resources (icons, etc.)
-├── app/                           # Build output
-├── docker-compose.yml             # PostgreSQL Docker setup
+├── app/                           # Build output (generated)
 ├── package.json                   # Project dependencies
 ├── tsconfig.json                  # Root TypeScript config
 ├── electron-builder.yml           # Electron build configuration
@@ -377,6 +382,23 @@ npm run build            # Build production app (macOS/Windows/Linux)
 ---
 
 ## 🐛 Troubleshooting
+
+### Area Capture Showing Wrong Region
+
+**Problem**: Selected area doesn't match what appears in preview (zoomed in)
+
+**Solution**: This should be fixed in the latest version using `nativeImage.crop()`. If still occurring:
+```bash
+# Update to latest version
+git pull
+npm install
+
+# Clear cache and restart
+rm -rf ~/Library/Application\ Support/SnapFlow
+npm run dev
+```
+
+**Note**: The latest version uses direct coordinate mapping with native Electron APIs for pixel-perfect accuracy.
 
 ### Supabase Connection Issues
 
@@ -454,14 +476,15 @@ node --version  # Should be 18+
 npm run dev
 ```
 
-### Image Preview Shows Small Image
+### Clipboard Not Working
 
-**Problem**: Screenshot preview appears too small in dialog
+**Problem**: Screenshots not automatically copying to clipboard
 
-**Solution**: This should be fixed in the latest version. If still occurring:
-1. Clear browser cache: Cmd+Shift+R (macOS) or Ctrl+Shift+R (Windows)
-2. Restart the app
-3. Update to latest version: `git pull && npm install`
+**Solution**:
+1. Ensure you're running the latest version with clipboard support
+2. Check console logs for "Image copied to clipboard" message
+3. Try manually: After capture, the image should be available to paste (Cmd+V / Ctrl+V)
+4. On macOS, check System Preferences → Security & Privacy for clipboard permissions
 
 ### Hot Reload Not Working
 
@@ -507,9 +530,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🙏 Acknowledgments
 
 - [Nextron](https://github.com/saltyshiomix/nextron) - Amazing Next.js + Electron boilerplate
+- [Supabase](https://supabase.com/) - Open source Firebase alternative
 - [Radix UI](https://www.radix-ui.com/) - Accessible component primitives
 - [Konva.js](https://konvajs.org/) - Powerful HTML5 Canvas library
-- [Prisma](https://www.prisma.io/) - Next-generation ORM
+- [Sharp](https://sharp.pixelplumbing.com/) - High performance image processing
 - [Tailwind CSS](https://tailwindcss.com/) - Utility-first CSS framework
 
 ---
