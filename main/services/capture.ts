@@ -2,7 +2,8 @@ import {
   screen,
   desktopCapturer,
   BrowserWindow,
-  systemPreferences,
+  clipboard,
+  DesktopCapturerSource,
 } from "electron";
 import { storageManager } from "../utils/storage";
 import sharp from "sharp";
@@ -24,11 +25,10 @@ export class CaptureService {
    */
   async checkScreenRecordingPermission(): Promise<boolean> {
     if (process.platform !== "darwin") {
-      return true; // Not needed on other platforms
+      return true;
     }
 
     try {
-      // On macOS, attempt to get sources - if it fails, permission is denied
       const sources = await desktopCapturer.getSources({
         types: ["screen"],
         thumbnailSize: { width: 1, height: 1 },
@@ -40,6 +40,9 @@ export class CaptureService {
     }
   }
 
+  /**
+   * Main capture method - handles fullscreen, window, and region captures
+   */
   async captureScreenshot(
     options: CaptureOptions
   ): Promise<{ dataUrl: string; buffer: Buffer }> {
@@ -52,13 +55,27 @@ export class CaptureService {
         );
       }
 
-      // Get all SnapFlow windows to filter them out
-      const allWindows = BrowserWindow.getAllWindows();
-      const snapflowWindowIds = allWindows.map((win) => `window:${win.id}:0`);
+      const primaryDisplay = screen.getPrimaryDisplay();
+      const scaleFactor = primaryDisplay.scaleFactor || 1;
+      const { width, height } = primaryDisplay.size;
 
+      console.log("[Capture Service] Display info:", {
+        size: primaryDisplay.size,
+        scaleFactor,
+        thumbnailSize: {
+          width: Math.floor(width * scaleFactor),
+          height: Math.floor(height * scaleFactor),
+        },
+      });
+
+      // Get desktop sources
       const sources = await desktopCapturer.getSources({
         types: ["screen", "window"],
-        thumbnailSize: screen.getPrimaryDisplay().workAreaSize,
+        thumbnailSize: {
+          width: Math.floor(width * scaleFactor),
+          height: Math.floor(height * scaleFactor),
+        },
+        fetchWindowIcons: false,
       });
 
       if (sources.length === 0) {
@@ -67,57 +84,12 @@ export class CaptureService {
         );
       }
 
-      let source;
-      if (options.mode === "fullscreen") {
-        // Get all displays to determine which screen to capture
-        const displays = screen.getAllDisplays();
-        const primaryDisplay = screen.getPrimaryDisplay();
-
-        // Find which display has the SnapFlow window
-        let snapflowDisplayId = primaryDisplay.id;
-        for (const win of allWindows) {
-          if (win && !win.isDestroyed()) {
-            const winBounds = win.getBounds();
-            const winCenter = {
-              x: winBounds.x + winBounds.width / 2,
-              y: winBounds.y + winBounds.height / 2
-            };
-
-            // Check which display contains the window center
-            for (const display of displays) {
-              const bounds = display.bounds;
-              if (
-                winCenter.x >= bounds.x &&
-                winCenter.x < bounds.x + bounds.width &&
-                winCenter.y >= bounds.y &&
-                winCenter.y < bounds.y + bounds.height
-              ) {
-                snapflowDisplayId = display.id;
-                break;
-              }
-            }
-          }
-        }
-
-        // If there are multiple displays, prefer one without SnapFlow
-        if (displays.length > 1) {
-          const alternativeDisplay = displays.find(d => d.id !== snapflowDisplayId);
-          if (alternativeDisplay) {
-            // Find the screen source for the alternative display
-            source = sources.find((s) =>
-              s.id.startsWith("screen") &&
-              s.display_id === alternativeDisplay.id.toString()
-            );
-          }
-        }
-
-        // Fallback to any screen if no alternative found
-        if (!source) {
-          source = sources.find((s) => s.id.startsWith("screen"));
-        }
-      } else if (options.mode === "window" && options.windowId) {
+      // Select the appropriate source
+      let source: DesktopCapturerSource;
+      if (options.mode === "window" && options.windowId) {
         source = sources.find((s) => s.id === options.windowId);
       } else {
+        // For fullscreen or region, get the primary screen
         source = sources.find((s) => s.id.startsWith("screen"));
       }
 
@@ -125,23 +97,38 @@ export class CaptureService {
         throw new Error("No capture source found");
       }
 
-      let buffer = source.thumbnail.toPNG();
+      console.log("[Capture Service] Source size:", source.thumbnail.getSize());
 
-      // If region capture, crop the image
+      // Handle region capture
       if (options.mode === "region" && options.bounds) {
-        buffer = await sharp(buffer)
-          .extract({
-            left: Math.round(options.bounds.x),
-            top: Math.round(options.bounds.y),
-            width: Math.round(options.bounds.width),
-            height: Math.round(options.bounds.height),
-          })
-          .png()
-          .toBuffer();
+        console.log("[Capture Service] Region crop:", options.bounds);
+
+        const croppedImage = source.thumbnail.crop({
+          x: Math.max(0, Math.floor(options.bounds.x)),
+          y: Math.max(0, Math.floor(options.bounds.y)),
+          width: Math.floor(options.bounds.width),
+          height: Math.floor(options.bounds.height),
+        });
+        const buffer = croppedImage.toPNG();
+
+        console.log("[Capture Service] Cropped size:", croppedImage.getSize());
+
+        // Copy to clipboard
+        clipboard.writeImage(croppedImage);
+        console.log("[Capture Service] Image copied to clipboard");
+
+        const dataUrl = `data:image/png;base64,${buffer.toString("base64")}`;
+        return { dataUrl, buffer };
       }
 
-      const dataUrl = `data:image/png;base64,${buffer.toString("base64")}`;
+      // Fullscreen or window capture
+      const buffer = source.thumbnail.toPNG();
 
+      // Copy to clipboard
+      clipboard.writeImage(source.thumbnail);
+      console.log("[Capture Service] Screenshot copied to clipboard");
+
+      const dataUrl = `data:image/png;base64,${buffer.toString("base64")}`;
       return { dataUrl, buffer };
     } catch (error) {
       console.error("Screenshot capture error:", error);
@@ -149,6 +136,9 @@ export class CaptureService {
     }
   }
 
+  /**
+   * Save screenshot to storage
+   */
   async saveScreenshot(issueId: string, buffer: Buffer): Promise<string> {
     const filePath = await storageManager.saveCapture(
       issueId,
@@ -158,13 +148,16 @@ export class CaptureService {
     return filePath;
   }
 
+  /**
+   * Create thumbnail from screenshot
+   */
   async createThumbnail(buffer: Buffer, issueId: string): Promise<string> {
     const thumbnailBuffer = await sharp(buffer)
       .resize(800, 600, {
         fit: "inside",
         withoutEnlargement: true,
       })
-      .png({ quality: 95, compressionLevel: 6 })
+      .png({ quality: 100, compressionLevel: 6 })
       .toBuffer();
 
     const thumbnailPath = await storageManager.saveCapture(
@@ -175,10 +168,12 @@ export class CaptureService {
     return thumbnailPath;
   }
 
+  /**
+   * Get available windows for window capture
+   */
   async getAvailableWindows(): Promise<
     { id: string; name: string; thumbnail: string }[]
   > {
-    // Get all SnapFlow windows to filter them out
     const allWindows = BrowserWindow.getAllWindows();
     const snapflowWindowIds = allWindows.map((win) => `window:${win.id}:0`);
 
@@ -189,15 +184,9 @@ export class CaptureService {
 
     return sources
       .filter((source) => {
-        // Filter out unnamed windows
         if (source.name === "") return false;
-
-        // Filter out SnapFlow windows by ID
         if (snapflowWindowIds.includes(source.id)) return false;
-
-        // Filter out SnapFlow windows by name
         if (source.name.toLowerCase().includes("snapflow")) return false;
-
         return true;
       })
       .map((source) => ({
@@ -205,14 +194,6 @@ export class CaptureService {
         name: source.name,
         thumbnail: source.thumbnail.toDataURL(),
       }));
-  }
-
-  async getScreens(): Promise<{ id: number; bounds: any }[]> {
-    const displays = screen.getAllDisplays();
-    return displays.map((display) => ({
-      id: display.id,
-      bounds: display.bounds,
-    }));
   }
 }
 

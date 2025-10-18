@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import clsx from "clsx";
 
 interface LocalImageProps {
   src: string;
@@ -62,8 +63,8 @@ export const LocalImage: React.FC<LocalImageProps> = ({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px] bg-gray-900/30 rounded-lg">
-        <div className="flex flex-col items-center justify-center p-12">
+      <div className={clsx("flex items-center justify-center bg-gray-900/30 rounded-lg w-full h-full", className)} style={style}>
+        <div className="flex flex-col items-center justify-center">
           <svg
             className="w-12 h-12 text-gray-600 animate-spin mb-4"
             fill="none"
@@ -93,5 +94,16 @@ export const LocalImage: React.FC<LocalImageProps> = ({
     return null;
   }
 
-  return <img src={dataUrl} alt={alt} className={className} style={style} />;
+  return (
+    <img
+      src={dataUrl}
+      alt={alt}
+      className={clsx(className)}
+      style={{
+        imageRendering: '-webkit-optimize-contrast',
+        ...style,
+      }}
+      loading="eager"
+    />
+  );
 };

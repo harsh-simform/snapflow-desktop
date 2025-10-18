@@ -51,7 +51,17 @@ const api = {
   deleteIssue: (issueId: string) =>
     ipcRenderer.invoke("issue:delete", { issueId }),
 
-  // Capture methods
+  // Capture methods - Core functions
+  captureFullScreen: () => ipcRenderer.invoke("capture:full-screen"),
+  captureActiveWindow: () => ipcRenderer.invoke("capture:active-window"),
+  captureSelectedRegion: (bounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }) => ipcRenderer.invoke("capture:selected-region", { bounds }),
+
+  // Legacy capture methods
   captureScreenshot: (options: {
     mode: "fullscreen" | "window" | "region";
     windowId?: string;
@@ -61,6 +71,10 @@ const api = {
   getAvailableWindows: () => ipcRenderer.invoke("capture:get-windows"),
   saveCapture: (issueId: string, buffer: ArrayBuffer) =>
     ipcRenderer.invoke("capture:save", { issueId, buffer }),
+  getPendingScreenshot: () => ipcRenderer.invoke("capture:get-pending"),
+  selectWindow: (windowId: string) =>
+    ipcRenderer.invoke("capture:select-window", { windowId }),
+  cancelWindowSelect: () => ipcRenderer.invoke("capture:cancel-window-select"),
 
   // Connector methods
   listConnectors: () => ipcRenderer.invoke("connector:list"),
@@ -110,6 +124,12 @@ const api = {
       callback(route);
     ipcRenderer.on("navigate", subscription);
     return () => ipcRenderer.removeListener("navigate", subscription);
+  },
+  onAvailableWindows: (callback: (windows: any[]) => void) => {
+    const subscription = (_event: IpcRendererEvent, windows: any[]) =>
+      callback(windows);
+    ipcRenderer.on("available-windows", subscription);
+    return () => ipcRenderer.removeListener("available-windows", subscription);
   },
 };
 

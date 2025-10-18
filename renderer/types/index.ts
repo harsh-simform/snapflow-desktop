@@ -21,6 +21,7 @@ export interface Issue {
     url?: string;
   }[];
   userId: string;
+  tags?: string[];
 }
 
 export interface Connector {

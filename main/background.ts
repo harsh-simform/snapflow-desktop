@@ -1,5 +1,6 @@
+import "dotenv/config";
 import path from "path";
-import { app, ipcMain, Tray, Menu, nativeImage, BrowserWindow, protocol } from "electron";
+import electron from "electron";
 import serve from "electron-serve";
 import { createWindow } from "./helpers";
 import { authService } from "./services/auth";
@@ -7,52 +8,74 @@ import { issueService } from "./services/issues";
 import { captureService } from "./services/capture";
 import { connectorService } from "./services/connectors";
 import { storageManager } from "./utils/storage";
-import { configService } from "./services/config";
-import { prisma, disconnectPrisma } from "./utils/prisma";
 import { sessionManager } from "./utils/session";
 import fs from "fs";
 
+const { app, ipcMain, Tray, Menu, nativeImage, BrowserWindow, protocol } = electron;
+
 const isProd = process.env.NODE_ENV === "production";
 
-// Register custom protocol scheme before app is ready
-protocol.registerSchemesAsPrivileged([
-  {
-    scheme: "snapflow",
-    privileges: {
-      standard: true,
-      secure: true,
-      supportFetchAPI: true,
-      corsEnabled: false,
-      bypassCSP: false,
+// Register custom protocol scheme before app is ready (if available)
+if (protocol && protocol.registerSchemesAsPrivileged) {
+  protocol.registerSchemesAsPrivileged([
+    {
+      scheme: "snapflow",
+      privileges: {
+        standard: true,
+        secure: true,
+        supportFetchAPI: true,
+        corsEnabled: false,
+        bypassCSP: false,
+      },
     },
-  },
-]);
+  ]);
+}
+
+// Global state
+let mainWindow: typeof BrowserWindow.prototype | null = null;
+let windowCaptureOverlay: typeof BrowserWindow.prototype | null = null;
+let tray: typeof Tray.prototype | null = null;
+let isQuitting = false;
+let pendingScreenshot: { dataUrl: string; mode: string } | null = null;
 
 if (isProd) {
   serve({ directory: "app" });
 } else {
-  app.setPath("userData", `${app.getPath("userData")} (development)`);
+  if (app && app.setPath) {
+    app.setPath("userData", `${app.getPath("userData")} (development)`);
+  }
 
   // In development, quit app when terminal process is killed
   process.on("SIGTERM", () => {
     console.log("SIGTERM received, quitting app...");
-    app.quit();
+    isQuitting = true;
+    if (app) app.quit();
   });
 
   process.on("SIGINT", () => {
     console.log("SIGINT received, quitting app...");
-    app.quit();
+    isQuitting = true;
+    if (app) app.quit();
+  });
+
+  // Also handle parent process exit (when npm run dev is killed)
+  process.on("disconnect", () => {
+    console.log("Parent process disconnected, quitting app...");
+    isQuitting = true;
+    if (app) app.quit();
   });
 }
 
-let mainWindow: BrowserWindow | null = null;
-let tray: Tray | null = null;
-let isQuitting = false;
-
 async function createMainWindow() {
+  // Set app icon
+  const iconPath = isProd
+    ? path.join(process.resourcesPath, "icon.png")
+    : path.join(__dirname, "../resources/icon.png");
+
   mainWindow = createWindow("main", {
     width: 1200,
     height: 800,
+    icon: iconPath,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -115,12 +138,6 @@ function createSystemTray() {
       },
     },
     {
-      label: "Capture Window",
-      click: () => {
-        handleScreenshotCapture("window");
-      },
-    },
-    {
       label: "Capture Area",
       click: () => {
         handleScreenshotCapture("region");
@@ -148,98 +165,260 @@ function createSystemTray() {
   tray.setContextMenu(contextMenu);
 }
 
+async function createWindowCaptureOverlay() {
+  const { screen } = electron;
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width, height, x, y } = primaryDisplay.bounds;
+
+  // Capture screenshot first to use as background
+  const { dataUrl } = await captureService.captureScreenshot({ mode: "fullscreen" });
+
+  // Get all available windows before creating overlay
+  const availableWindows = await captureService.getAvailableWindows();
+
+  windowCaptureOverlay = new BrowserWindow({
+    width,
+    height,
+    x,
+    y,
+    transparent: true,
+    frame: false,
+    alwaysOnTop: true,
+    resizable: false,
+    movable: false,
+    hasShadow: false,
+    enableLargerThanScreen: true,
+    backgroundColor: '#00000000', // Fully transparent background
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, "preload.js"),
+    },
+  });
+
+  // Set always on top but don't use fullscreen mode (which can break transparency on macOS)
+  windowCaptureOverlay.setAlwaysOnTop(true, "screen-saver", 1);
+  windowCaptureOverlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+  // Ensure dock icon stays visible on macOS
+  if (process.platform === 'darwin') {
+    app.dock?.show();
+  }
+
+  // Load the window capture page
+  if (isProd) {
+    await windowCaptureOverlay.loadURL("app://./window-capture");
+  } else {
+    const port = process.argv[2];
+    await windowCaptureOverlay.loadURL(`http://localhost:${port}/window-capture`);
+  }
+
+  // Send background screenshot and available windows to the renderer
+  windowCaptureOverlay.webContents.once("did-finish-load", () => {
+    windowCaptureOverlay?.webContents.send("background-screenshot", { dataUrl });
+    windowCaptureOverlay?.webContents.send("available-windows", availableWindows);
+  });
+
+  // Handle window close
+  windowCaptureOverlay.on("closed", () => {
+    windowCaptureOverlay = null;
+  });
+}
+
+async function createAreaCaptureOverlay() {
+  const { screen } = electron;
+
+  // Ensure dock icon stays visible on macOS
+  if (process.platform === 'darwin') {
+    app.dock?.show();
+  }
+
+  // For now, use primary display - in future, could show overlay on all displays
+  const primaryDisplay = screen.getPrimaryDisplay();
+
+  // Use bounds (includes menu bar and dock) not workArea (excludes them)
+  const { width, height, x, y } = primaryDisplay.bounds;
+  const scaleFactor = primaryDisplay.scaleFactor || 1;
+
+  console.log("[Area Capture Overlay] Display info:", {
+    bounds: primaryDisplay.bounds,
+    workArea: primaryDisplay.workArea,
+    size: primaryDisplay.size,
+    scaleFactor: primaryDisplay.scaleFactor
+  });
+
+  // Create the overlay window (no need to capture screenshot beforehand)
+  windowCaptureOverlay = new BrowserWindow({
+    width,
+    height,
+    x,
+    y,
+    transparent: true,
+    frame: false,
+    alwaysOnTop: true,
+    resizable: false,
+    movable: false,
+    hasShadow: false,
+    enableLargerThanScreen: true,
+    backgroundColor: '#00000000', // Fully transparent background
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, "preload.js"),
+    },
+  });
+
+  // Set always on top but don't use fullscreen mode (which can break transparency on macOS)
+  windowCaptureOverlay.setAlwaysOnTop(true, "screen-saver", 1);
+  windowCaptureOverlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+  // Load the area capture page
+  if (isProd) {
+    await windowCaptureOverlay.loadURL("app://./area-capture");
+  } else {
+    const port = process.argv[2];
+    await windowCaptureOverlay.loadURL(`http://localhost:${port}/area-capture`);
+  }
+
+  // Send display info once page is loaded
+  windowCaptureOverlay.webContents.once("did-finish-load", async () => {
+    console.log("[Area Capture] Page loaded, sending display info");
+
+    const overlayBounds = windowCaptureOverlay?.getBounds() || primaryDisplay.bounds;
+
+    console.log("[Area Capture] Display info:", {
+      bounds: primaryDisplay.bounds,
+      size: primaryDisplay.size,
+      scaleFactor,
+      overlayBounds
+    });
+
+    windowCaptureOverlay?.webContents.send("area-capture-ready", {
+      scaleFactor,
+      displayBounds: primaryDisplay.bounds,
+      overlayBounds
+    });
+  });
+
+  // Handle window close
+  windowCaptureOverlay.on("closed", () => {
+    windowCaptureOverlay = null;
+  });
+}
+
 async function handleScreenshotCapture(
   mode: "fullscreen" | "window" | "region"
 ) {
   try {
-    // For window and region modes, hide window first, capture screen, then show UI
+    // For window mode, create a transparent overlay for window selection
     if (mode === "window") {
+      // Keep app in dock even when hiding main window
+      if (process.platform === 'darwin') {
+        app.dock?.show();
+      }
+
       mainWindow?.hide();
 
       // Wait a bit for window to hide
       await new Promise((resolve) => setTimeout(resolve, 300));
 
-      // Capture fullscreen to show available windows
-      const { dataUrl } = await captureService.captureScreenshot({ mode: "fullscreen" });
-
-      mainWindow?.show();
-      if (isProd) {
-        await mainWindow?.loadURL("app://./window-picker");
-      } else {
-        const port = process.argv[2];
-        await mainWindow?.loadURL(`http://localhost:${port}/window-picker`);
-      }
-
-      // Send the screenshot to use as background
-      mainWindow?.webContents.send("background-screenshot", { dataUrl });
+      // Create transparent overlay window for window selection
+      await createWindowCaptureOverlay();
       return;
     }
 
     if (mode === "region") {
-      mainWindow?.hide();
-
-      // Wait a bit for window to hide
-      await new Promise((resolve) => setTimeout(resolve, 300));
-
-      // Capture fullscreen for area selection
-      const { dataUrl } = await captureService.captureScreenshot({ mode: "fullscreen" });
-
-      mainWindow?.show();
-      if (isProd) {
-        await mainWindow?.loadURL("app://./area-selector");
-      } else {
-        const port = process.argv[2];
-        await mainWindow?.loadURL(`http://localhost:${port}/area-selector`);
+      // Keep app in dock even when hiding main window
+      if (process.platform === 'darwin') {
+        app.dock?.show();
       }
 
-      // Send the screenshot to use as background
-      mainWindow?.webContents.send("background-screenshot", { dataUrl });
+      mainWindow?.hide();
+
+      // Wait a bit for window to hide (reduced delay for smoother UX)
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Create transparent overlay window for area selection
+      await createAreaCaptureOverlay();
       return;
     }
 
     // For fullscreen, capture immediately
+    console.log("[Tray] Starting fullscreen capture...");
+
+    // Keep app in dock even when hiding main window
+    if (process.platform === 'darwin') {
+      app.dock?.show();
+    }
+
     mainWindow?.hide();
     await new Promise((resolve) => setTimeout(resolve, 300));
 
+    console.log("[Tray] Capturing screenshot...");
     const { dataUrl } = await captureService.captureScreenshot({ mode });
+    console.log("[Tray] Screenshot captured, dataUrl length:", dataUrl?.length || 0);
+
+    // Store screenshot data globally so annotate page can retrieve it
+    pendingScreenshot = { dataUrl, mode };
+    console.log("[Tray] Screenshot stored in pendingScreenshot");
 
     mainWindow?.show();
     // Navigate to annotate page
+    console.log("[Tray] Navigating to annotate page...");
     if (isProd) {
       await mainWindow?.loadURL("app://./annotate");
     } else {
       const port = process.argv[2];
       await mainWindow?.loadURL(`http://localhost:${port}/annotate`);
     }
-
-    // Send the captured image to the renderer
-    mainWindow?.webContents.send("screenshot-captured", { dataUrl, mode });
+    console.log("[Tray] Navigation complete");
   } catch (error) {
-    console.error("Failed to capture screenshot:", error);
+    console.error("[Tray] Failed to capture screenshot:", error);
   }
 }
 
 // Request single instance lock
-const gotTheLock = app.requestSingleInstanceLock();
+if (app && app.requestSingleInstanceLock) {
+  const gotTheLock = app.requestSingleInstanceLock();
 
-if (!gotTheLock) {
-  // Another instance is already running, quit this one
-  app.quit();
-} else {
-  // Handle second instance attempt - focus the existing window
-  app.on("second-instance", () => {
-    // Someone tried to run a second instance, we should focus our window
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) {
-        mainWindow.restore();
+  if (!gotTheLock) {
+    // Another instance is already running, quit this one
+    app.quit();
+  } else {
+    // Handle second instance attempt - focus the existing window
+    app.on("second-instance", () => {
+      // Someone tried to run a second instance, we should focus our window
+      if (mainWindow) {
+        if (mainWindow.isMinimized()) {
+          mainWindow.restore();
+        }
+        mainWindow.show();
+        mainWindow.focus();
       }
-      mainWindow.show();
-      mainWindow.focus();
-    }
-  });
+    });
 
-  (async () => {
-    await app.whenReady();
+    (async () => {
+      await app.whenReady();
+
+    // Set application icon for dock (macOS) and taskbar
+    const iconPath = isProd
+      ? path.join(process.resourcesPath, "icon.png")
+      : path.join(__dirname, "../resources/icon.png");
+
+    const appIcon = nativeImage.createFromPath(iconPath);
+    if (process.platform === 'darwin') {
+      app.dock?.setIcon(appIcon);
+      // Keep app in dock permanently - never hide
+      // This prevents the dock icon from disappearing during overlay/capture
+      app.dock?.show();
+    }
+
+    // Prevent app from hiding from dock when all windows are closed
+    // This ensures the dock icon is always visible
+    if (process.platform === 'darwin') {
+      // Force the app to always show in dock, even with no windows
+      app.dock?.show();
+    }
 
     // Register custom protocol for local file access
     protocol.registerFileProtocol("snapflow", (request, callback) => {
@@ -270,24 +449,32 @@ if (!gotTheLock) {
     // Create main window
     await createMainWindow();
 
-    // Create system tray
-    createSystemTray();
-  })();
+      // Setup IPC handlers
+      setupIPCHandlers();
+
+      // Create system tray
+      createSystemTray();
+    })();
+  }
 }
 
 // Prevent app from quitting when all windows are closed
-app.on("window-all-closed", () => {
-  // Do nothing, keep app running in tray
-});
+if (app && app.on) {
+  app.on("window-all-closed", () => {
+    // Do nothing, keep app running in tray
+  });
+}
 
-// IPC Handlers
+// Setup IPC Handlers function
+function setupIPCHandlers() {
+  if (!ipcMain) return;
 
-// Auth handlers
-ipcMain.handle("user:create", async (_event, { name, email, password }) => {
+  // Auth handlers
+  ipcMain.handle("user:create", async (_event, { name, email, password }) => {
   try {
     const user = await authService.createUser(name, email, password);
     // Store user in session (same as login)
-    sessionManager.setUser(user);
+    await sessionManager.setUser(user);
     return { success: true, data: user };
   } catch (error) {
     return { success: false, error: error.message };
@@ -298,7 +485,7 @@ ipcMain.handle("user:login", async (_event, { email, password }) => {
   try {
     const user = await authService.login(email, password);
     // Store user in session
-    sessionManager.setUser(user);
+    await sessionManager.setUser(user);
     return { success: true, data: user };
   } catch (error) {
     return { success: false, error: error.message };
@@ -322,8 +509,7 @@ ipcMain.handle("user:get", async (_event, userId?: string) => {
 
 ipcMain.handle("user:logout", async () => {
   try {
-    authService.logout();
-    sessionManager.clearUser();
+    await sessionManager.clearUser();
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
@@ -380,16 +566,57 @@ ipcMain.handle("issue:delete", async (_event, { issueId }) => {
   }
 });
 
-// Capture handlers
+// Capture handlers - Core functions
+ipcMain.handle("capture:full-screen", async () => {
+  try {
+    const buffer = await captureService.captureFullScreen();
+    const dataUrl = `data:image/png;base64,${buffer.toString("base64")}`;
+    return { success: true, data: { buffer: Array.from(buffer), dataUrl } };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle("capture:active-window", async () => {
+  try {
+    const buffer = await captureService.captureActiveWindow();
+    const dataUrl = `data:image/png;base64,${buffer.toString("base64")}`;
+    return { success: true, data: { buffer: Array.from(buffer), dataUrl } };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle("capture:selected-region", async (_event, { bounds }) => {
+  try {
+    const buffer = await captureService.captureSelectedRegion(bounds);
+    const dataUrl = `data:image/png;base64,${buffer.toString("base64")}`;
+    return { success: true, data: { buffer: Array.from(buffer), dataUrl } };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Legacy capture handler (kept for backward compatibility)
 ipcMain.handle(
   "capture:screenshot",
   async (_event, { mode, windowId, bounds }) => {
     try {
+      // Close overlay window if it exists (for region and window capture)
+      if (windowCaptureOverlay) {
+        windowCaptureOverlay.close();
+        windowCaptureOverlay = null;
+      }
+
       const result = await captureService.captureScreenshot({
         mode,
         windowId,
         bounds,
       });
+
+      // Store screenshot data globally
+      pendingScreenshot = { dataUrl: result.dataUrl, mode };
+      console.log("[IPC Capture] Screenshot stored in pendingScreenshot");
 
       // Navigate to annotate page
       mainWindow?.show();
@@ -400,27 +627,15 @@ ipcMain.handle(
         await mainWindow?.loadURL(`http://localhost:${port}/annotate`);
       }
 
-      // Wait for page to load before sending screenshot data
-      await new Promise<void>((resolve) => {
-        const checkLoaded = () => {
-          if (mainWindow?.webContents.isLoading()) {
-            setTimeout(checkLoaded, 100);
-          } else {
-            // Give an extra moment for React to mount
-            setTimeout(() => resolve(), 300);
-          }
-        };
-        checkLoaded();
-      });
-
-      // Send the captured image to the renderer
-      mainWindow?.webContents.send("screenshot-captured", {
-        dataUrl: result.dataUrl,
-        mode,
-      });
-
       return { success: true, data: result };
     } catch (error) {
+      console.error("[IPC Capture] Error:", error);
+      // Close overlay and show main window even on error
+      if (windowCaptureOverlay) {
+        windowCaptureOverlay.close();
+        windowCaptureOverlay = null;
+      }
+      mainWindow?.show();
       return { success: false, error: error.message };
     }
   }
@@ -444,6 +659,63 @@ ipcMain.handle("capture:get-windows", async () => {
   }
 });
 
+// Handle window selection from overlay
+ipcMain.handle("capture:select-window", async (_event, { windowId }) => {
+  try {
+    console.log("[Window Capture] Selected window ID:", windowId);
+
+    // Close the overlay
+    if (windowCaptureOverlay) {
+      windowCaptureOverlay.close();
+      windowCaptureOverlay = null;
+    }
+
+    // Wait a bit for overlay to close
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    console.log("[Window Capture] Capturing window screenshot...");
+    // Capture the selected window
+    const result = await captureService.captureScreenshot({
+      mode: "window",
+      windowId,
+    });
+
+    console.log("[Window Capture] Screenshot captured, dataUrl length:", result.dataUrl?.length || 0);
+
+    // Store screenshot data globally
+    pendingScreenshot = { dataUrl: result.dataUrl, mode: "window" };
+    console.log("[Window Capture] Stored pending screenshot");
+
+    // Navigate to annotate page
+    console.log("[Window Capture] Showing main window and navigating to annotate page...");
+    mainWindow?.show();
+    if (isProd) {
+      await mainWindow?.loadURL("app://./annotate");
+    } else {
+      const port = process.argv[2];
+      await mainWindow?.loadURL(`http://localhost:${port}/annotate`);
+    }
+    console.log("[Window Capture] Navigation complete");
+
+    return { success: true, data: result };
+  } catch (error) {
+    console.error("[Window Capture] Error:", error);
+    // Show main window even on error
+    mainWindow?.show();
+    return { success: false, error: error.message };
+  }
+});
+
+// Handle cancel from window capture overlay
+ipcMain.handle("capture:cancel-window-select", () => {
+  if (windowCaptureOverlay) {
+    windowCaptureOverlay.close();
+    windowCaptureOverlay = null;
+  }
+  mainWindow?.show();
+  return { success: true };
+});
+
 ipcMain.handle("capture:save", async (_event, { issueId, buffer }) => {
   try {
     const filePath = await captureService.saveScreenshot(
@@ -458,6 +730,17 @@ ipcMain.handle("capture:save", async (_event, { issueId, buffer }) => {
   } catch (error) {
     return { success: false, error: error.message };
   }
+});
+
+ipcMain.handle("capture:get-pending", async () => {
+  console.log("[IPC] Getting pending screenshot, exists:", !!pendingScreenshot);
+  if (pendingScreenshot) {
+    const data = pendingScreenshot;
+    pendingScreenshot = null; // Clear after retrieval
+    console.log("[IPC] Returning pending screenshot, length:", data.dataUrl?.length || 0);
+    return { success: true, data };
+  }
+  return { success: false, error: "No pending screenshot" };
 });
 
 // Connector handlers
@@ -544,35 +827,7 @@ ipcMain.handle("sync:issue", async (_event, { issueId, connectorType }) => {
   }
 });
 
-// Database configuration handlers
-ipcMain.handle("db:get-config", async () => {
-  try {
-    const config = configService.getDatabaseConfig();
-    return { success: true, data: config };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle("db:set-config", async (_event, { url }) => {
-  try {
-    configService.setDatabaseUrl(url);
-    // Update environment variable
-    process.env.DATABASE_URL = url;
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle("db:test-connection", async () => {
-  try {
-    await prisma.$queryRaw`SELECT 1`;
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
+// Note: Database configuration handlers removed - Supabase config is now via environment variables
 
 // File access handler
 ipcMain.handle("file:read-image", async (_event, { filePath }) => {
@@ -604,11 +859,16 @@ ipcMain.handle("app:show-window", () => {
   mainWindow?.show();
 });
 
-ipcMain.handle("app:hide-window", () => {
-  mainWindow?.hide();
-});
+  ipcMain.handle("app:hide-window", () => {
+    mainWindow?.hide();
+  });
+}
 
 // Cleanup on app quit
-app.on("before-quit", async () => {
-  await disconnectPrisma();
-});
+if (app && app.on) {
+  app.on("before-quit", async () => {
+    // Don't clear the session - we want to persist it across app restarts
+    // Session will only be cleared when user explicitly logs out
+    console.log("[App] Quitting app, session will be preserved for next launch");
+  });
+}

@@ -5,6 +5,7 @@ import {
   Rectangle,
 } from 'electron'
 import Store from 'electron-store'
+import { join } from 'path'
 
 export const createWindow = (
   windowName: string,
@@ -73,6 +74,7 @@ export const createWindow = (
   const win = new BrowserWindow({
     ...state,
     ...options,
+    icon: join(__dirname, "../resources/icon.png"),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

@@ -23,6 +23,7 @@ export class StorageManager {
     }
     await fs.mkdir(this.baseDir, { recursive: true })
     await fs.mkdir(path.join(this.baseDir, 'Captures'), { recursive: true })
+    await fs.mkdir(path.join(this.baseDir, 'screenshots'), { recursive: true })
   }
 
   getCapturePath(issueId: string): string {
