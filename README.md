@@ -29,6 +29,7 @@
 ## ✨ Features
 
 ### Screenshot Capture
+
 - 📸 **Full Screen Capture** - Capture entire display with multi-monitor support
 - 🪟 **Window Capture** - Select and capture individual application windows
 - ✂️ **Region Selection** - Draw custom rectangular area to capture with transparent overlay
@@ -37,6 +38,7 @@
 - 🔐 **Permission Management** - Checks and guides macOS Screen Recording permissions
 
 ### Image Annotation
+
 - ✏️ **Freehand Drawing** - Pen tool with customizable colors and stroke width
 - 🔷 **Shape Tools** - Rectangles, circles with fill and stroke options
 - ➡️ **Arrow Tool** - Directional arrows for pointing out specific areas
@@ -46,6 +48,7 @@
 - 🖱️ **Selection & Transform** - Select, move, and resize drawn elements
 
 ### Issue Tracking
+
 - 📋 **Create Issues** - Save captures as issues with title, description, and tags
 - 🏷️ **Tag Management** - Organize issues with custom tags
 - 🔍 **Smart Filtering** - Filter by type, status, tags, and search
@@ -54,6 +57,7 @@
 - 💾 **Local Storage** - Organized file structure: `~/SnapFlow/Captures/YYYY/MM/DD/issueId/`
 
 ### Platform Integrations
+
 - 🐙 **GitHub Integration** - Create GitHub issues with embedded screenshots
 - 🔄 **Zoho Projects** - Create Zoho bugs with screenshot attachments
 - 📊 **Sync Status Tracking** - Track sync status per issue (local/syncing/synced/failed)
@@ -61,6 +65,7 @@
 - 🌐 **Multi-Platform Sync** - Sync single issue to multiple platforms
 
 ### Security & Authentication
+
 - 🔒 **User Authentication** - Email-based signup and login via Supabase Auth
 - 🛡️ **Secure Session Management** - JWT-based authentication with automatic token refresh
 - 💾 **Session Persistence** - Stay logged in across app restarts
@@ -68,6 +73,7 @@
 - 🔐 **Context Isolation** - Electron security best practices with IPC bridge
 
 ### User Experience
+
 - 🎨 **Dark Mode UI** - Beautiful dark theme interface with Radix UI components
 - ⚡ **System Tray** - Quick access to capture from menu bar
 - 🎬 **Smooth Animations** - Framer Motion transitions
@@ -81,6 +87,7 @@
 ## 🛠️ Tech Stack
 
 ### Frontend (Renderer Process)
+
 - **Framework**: [Next.js](https://nextjs.org/) 14.2.4 with [React](https://react.dev/) 18.3.1
 - **Language**: [TypeScript](https://www.typescriptlang.org/) 5.7.3
 - **Styling**: [Tailwind CSS](https://tailwindcss.com/) 3.4.3
@@ -94,6 +101,7 @@
 - **Validation**: [Zod](https://zod.dev/) 4.1.12
 
 ### Backend (Main Process)
+
 - **Runtime**: [Electron](https://www.electronjs.org/) 34.0.0
 - **Framework**: [Nextron](https://github.com/saltyshiomix/nextron) 9.5.0 (Next.js + Electron)
 - **Database**: [Supabase](https://supabase.com/) (PostgreSQL + Auth + Storage)
@@ -103,8 +111,13 @@
 - **HTTP Client**: [axios](https://axios-http.com/) 1.6.7
 
 ### Development Tools
+
 - **Build Tool**: [electron-builder](https://www.electron.build/) 24.13.3
 - **Package Manager**: npm/yarn/pnpm
+- **Code Quality**: [ESLint](https://eslint.org/) 9.38.0 with TypeScript support
+- **Code Formatting**: [Prettier](https://prettier.io/) 3.6.2
+- **Pre-commit Hooks**: [Husky](https://typicode.github.io/husky/) 9.1.7
+- **Staged Files Linting**: [lint-staged](https://github.com/okonet/lint-staged) 16.2.4
 
 ---
 
@@ -142,11 +155,13 @@ This will install all npm dependencies and prepare the app for development.
    - anon/public key
 
 3. Create a `.env` file in the project root:
+
    ```bash
    cp .env.example .env
    ```
 
 4. Update `.env` with your Supabase credentials:
+
    ```env
    SUPABASE_URL=https://your-project.supabase.co
    SUPABASE_ANON_KEY=your-anon-key-here
@@ -193,6 +208,7 @@ NODE_ENV="development"  # or "production"
 ### Supabase Setup
 
 SnapFlow uses Supabase for:
+
 - **Authentication**: Secure user signup/login with email/password
 - **Session Management**: Automatic token refresh and persistence
 - **User Profiles**: Store user metadata (name, email)
@@ -212,6 +228,7 @@ For detailed setup instructions, see [SUPABASE_SETUP.md](SUPABASE_SETUP.md)
 4. Save connector
 
 **Creating GitHub Token:**
+
 1. Go to GitHub Settings → Developer Settings → Personal Access Tokens
 2. Generate new token (classic)
 3. Select `repo` scope
@@ -234,6 +251,7 @@ For detailed setup instructions, see [SUPABASE_SETUP.md](SUPABASE_SETUP.md)
 ### Capturing Screenshots
 
 #### From System Tray
+
 1. Click the SnapFlow icon in your system tray
 2. Select capture mode:
    - **Capture Full Screen** - Capture entire display
@@ -241,6 +259,7 @@ For detailed setup instructions, see [SUPABASE_SETUP.md](SUPABASE_SETUP.md)
 3. Screenshot opens in annotation editor and is copied to clipboard
 
 #### Area Selection
+
 1. Semi-transparent overlay appears over your screen
 2. Click and drag to select the area you want to capture
 3. Release mouse to capture the selected region
@@ -248,6 +267,7 @@ For detailed setup instructions, see [SUPABASE_SETUP.md](SUPABASE_SETUP.md)
 5. Press `ESC` to cancel
 
 **Tips**:
+
 - Screenshots are automatically copied to clipboard for instant pasting
 - Perfect for sharing quickly in Slack, Discord, or any app (Cmd+V / Ctrl+V)
 - High-DPI displays (Retina) are fully supported with pixel-perfect accuracy
@@ -268,6 +288,7 @@ For detailed setup instructions, see [SUPABASE_SETUP.md](SUPABASE_SETUP.md)
 ### Managing Issues
 
 #### Creating Issues
+
 1. After annotation, fill in:
    - **Title**: Issue name
    - **Description**: Detailed description
@@ -276,6 +297,7 @@ For detailed setup instructions, see [SUPABASE_SETUP.md](SUPABASE_SETUP.md)
 3. Issue appears in your dashboard
 
 #### Viewing Issues
+
 1. Open **Home** page
 2. Use filters:
    - **Type**: All, Screenshots
@@ -287,6 +309,7 @@ For detailed setup instructions, see [SUPABASE_SETUP.md](SUPABASE_SETUP.md)
 5. Click issue card to preview in full resolution
 
 #### Syncing to Platforms
+
 1. Open issue preview or hover over issue card
 2. Click **GitHub** or **Zoho** button
 3. Wait for sync to complete (toast notifications show progress)
@@ -294,6 +317,7 @@ For detailed setup instructions, see [SUPABASE_SETUP.md](SUPABASE_SETUP.md)
 5. External issue links are stored for future reference
 
 #### Editing Issues
+
 1. Click issue card to open preview dialog
 2. Edit description by clicking **Edit** button
 3. Add/remove tags using the chips input
@@ -382,11 +406,58 @@ snapflow-desktop/
 npm run dev              # Start development server with hot reload
 ```
 
+### Code Quality & Formatting
+
+```bash
+npm run format           # Format all files with Prettier
+npm run format:check     # Check if files are formatted
+npm run lint             # Run ESLint on all files
+npm run lint:fix         # Run ESLint and fix issues
+npm run type-check       # Run TypeScript type checking
+```
+
 ### Build
 
 ```bash
 npm run build            # Build production app (macOS/Windows/Linux)
 ```
+
+---
+
+## 🎨 Code Quality
+
+SnapFlow uses a comprehensive code quality setup to maintain consistent code style and catch errors early:
+
+### Pre-commit Hooks
+
+Git hooks automatically run before each commit:
+
+- **Lint-staged**: Runs ESLint and Prettier only on staged files
+- **Type checking**: Ensures TypeScript types are valid
+- **Formatting**: Auto-formats code with Prettier
+
+### Manual Commands
+
+```bash
+# Format code
+npm run format              # Format all files
+npm run format:check        # Check formatting without modifying
+
+# Linting
+npm run lint                # Check for code issues
+npm run lint:fix            # Auto-fix linting issues
+
+# Type checking
+npm run type-check          # Verify TypeScript types
+```
+
+### Configuration Files
+
+- **`.prettierrc.json`** - Prettier formatting rules
+- **`.prettierignore`** - Files to skip formatting
+- **`.eslintrc.json`** - ESLint rules for code quality
+- **`.lintstagedrc.json`** - Lint-staged configuration
+- **`.husky/pre-commit`** - Pre-commit hook script
 
 ---
 
@@ -397,6 +468,7 @@ npm run build            # Build production app (macOS/Windows/Linux)
 **Problem**: Selected area doesn't match what appears in preview (zoomed in)
 
 **Solution**: This should be fixed in the latest version using `nativeImage.crop()`. If still occurring:
+
 ```bash
 # Update to latest version
 git pull
@@ -414,6 +486,7 @@ npm run dev
 **Problem**: "Supabase credentials not configured" error
 
 **Solution**:
+
 ```bash
 # Check .env file exists
 cat .env
@@ -432,6 +505,7 @@ cp .env.example .env
 **Problem**: "Invalid email or password" or signup issues
 
 **Solution**:
+
 1. Verify email confirmation is disabled for development:
    - Supabase Dashboard → Authentication → Providers → Email
    - Toggle "Enable Email Confirmations" to OFF
@@ -443,6 +517,7 @@ cp .env.example .env
 **Problem**: App logs out after restart
 
 **Solution**:
+
 ```bash
 # Clear Electron cache
 rm -rf ~/Library/Application\ Support/SnapFlow  # macOS
@@ -457,6 +532,7 @@ npm run dev
 **Problem**: "Failed to get sources" error on macOS
 
 **Solution**:
+
 1. Open **System Preferences** → **Security & Privacy** → **Privacy**
 2. Select **Screen Recording** from the left sidebar
 3. Check the box next to **SnapFlow** (or Electron)
@@ -469,6 +545,7 @@ npm run dev
 **Problem**: Electron app crashes on startup
 
 **Solution**:
+
 ```bash
 # Clear node_modules and reinstall
 rm -rf node_modules package-lock.json
@@ -490,6 +567,7 @@ npm run dev
 **Problem**: Screenshots not automatically copying to clipboard
 
 **Solution**:
+
 1. Ensure you're running the latest version with clipboard support
 2. Check console logs for "Image copied to clipboard" message
 3. Try manually: After capture, the image should be available to paste (Cmd+V / Ctrl+V)
@@ -500,6 +578,7 @@ npm run dev
 **Problem**: Changes don't reflect in development mode
 
 **Solution**:
+
 ```bash
 # Kill all Electron processes
 pkill -9 Electron
@@ -510,29 +589,42 @@ npm run dev
 
 ---
 
-## 🤝 Contributing
+## 👥 Development Team Guidelines
 
-Contributions are welcome! Please follow these steps:
+This is a private project. For team members working on the codebase:
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Commit your changes: `git commit -m 'Add amazing feature'`
-4. Push to the branch: `git push origin feature/amazing-feature`
-5. Open a Pull Request
+### Development Workflow
 
-### Development Guidelines
+1. Clone the repository: `git clone <repository-url>`
+2. Install dependencies: `npm install`
+3. Create a feature branch: `git checkout -b feature/your-feature-name`
+4. Make your changes and ensure code quality:
+   ```bash
+   npm run format      # Format code
+   npm run lint:fix    # Fix linting issues
+   npm run type-check  # Verify types
+   ```
+5. Commit your changes (pre-commit hooks will run automatically)
+6. Push to your branch: `git push origin feature/your-feature-name`
+7. Create a Pull Request for review
 
-- Follow existing code style (TypeScript, ESLint)
-- Write descriptive commit messages
-- Update documentation for new features
-- Test on multiple platforms if possible
-- Keep PRs focused on a single feature/fix
+### Code Quality Standards
+
+The project enforces code quality through automated tools:
+
+- Pre-commit hooks ensure all code is formatted and linted
+- TypeScript type checking prevents type errors
+
+### Documentation for Developers
+
+- [Development Guide](DEVELOPMENT.md) - Complete development workflow and guidelines
+- [Code Quality Guide](.github/CODE_QUALITY.md) - Detailed info on Prettier, ESLint, and pre-commit hooks
 
 ---
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This is a private project. All rights reserved.
 
 ---
 
@@ -552,8 +644,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 If you encounter any issues or have questions:
 
 1. Check the [Troubleshooting](#-troubleshooting) section
-2. Search existing [GitHub Issues](../../issues)
-3. Create a new issue with detailed information
+2. Review the [Code Quality Guide](.github/CODE_QUALITY.md)
+3. Contact the development team for assistance
 
 ---
 
