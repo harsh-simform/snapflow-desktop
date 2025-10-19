@@ -21,7 +21,6 @@ files:
 asarUnpack:
   - node_modules/.prisma/**/*
   - node_modules/@prisma/client/**/*
-  - node_modules/sharp/**/*
 
 mac:
   category: public.app-category.productivity

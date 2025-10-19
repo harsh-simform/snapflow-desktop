@@ -4,9 +4,9 @@ import {
   BrowserWindow,
   clipboard,
   DesktopCapturerSource,
+  nativeImage,
 } from "electron";
 import { storageManager } from "../utils/storage";
-import sharp from "sharp";
 
 interface CaptureOptions {
   mode: "fullscreen" | "window" | "region";
@@ -137,13 +137,31 @@ export class CaptureService {
    * Create thumbnail from screenshot
    */
   async createThumbnail(buffer: Buffer, issueId: string): Promise<string> {
-    const thumbnailBuffer = await sharp(buffer)
-      .resize(800, 600, {
-        fit: "inside",
-        withoutEnlargement: true,
-      })
-      .png({ quality: 100, compressionLevel: 6 })
-      .toBuffer();
+    // Create a NativeImage from the buffer
+    const image = nativeImage.createFromBuffer(buffer);
+    const size = image.getSize();
+
+    // Calculate new dimensions maintaining aspect ratio (max 800x600)
+    let newWidth = size.width;
+    let newHeight = size.height;
+
+    const maxWidth = 800;
+    const maxHeight = 600;
+
+    if (newWidth > maxWidth || newHeight > maxHeight) {
+      const widthRatio = maxWidth / newWidth;
+      const heightRatio = maxHeight / newHeight;
+      const ratio = Math.min(widthRatio, heightRatio);
+
+      newWidth = Math.floor(newWidth * ratio);
+      newHeight = Math.floor(newHeight * ratio);
+    }
+
+    // Resize the image
+    const resizedImage = image.resize({ width: newWidth, height: newHeight });
+
+    // Convert to PNG buffer
+    const thumbnailBuffer = resizedImage.toPNG();
 
     const thumbnailPath = await storageManager.saveCapture(
       issueId,
