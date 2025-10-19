@@ -21,12 +21,6 @@ export default function AreaCapture() {
   useEffect(() => {
     // Listen for area capture ready event
     const unsubscribe = window.ipc.on("area-capture-ready", (data: any) => {
-      console.log("=== Area Capture Ready ===");
-      console.log("Scale factor:", data.scaleFactor);
-      console.log("Display bounds:", data.displayBounds);
-      console.log("Overlay bounds:", data.overlayBounds);
-      console.log("Viewport size:", { width: window.innerWidth, height: window.innerHeight });
-
       setScaleFactor(data.scaleFactor || 1);
       setDisplayBounds(data.displayBounds || null);
       setOverlayBounds(data.overlayBounds || null);
@@ -48,25 +42,10 @@ export default function AreaCapture() {
   }, []);
 
   const getMousePosition = (e: React.MouseEvent): { x: number; y: number } => {
-    // Use clientX/clientY which are relative to the viewport
-    // The overlay window is sized to match the screen in CSS pixels
-    // Background image is scaled to fit via background-size: 100% 100%
-    // So coordinates in CSS pixels should map 1:1 to the visual representation
-
+    // Use clientX/clientY which are relative to the viewport (overlay window)
+    // Since overlay window is positioned at the display origin, these should be screen coords
     const x = e.clientX;
     const y = e.clientY;
-
-    // Also log screenX/Y for comparison
-    console.log("Mouse event:", {
-      clientX: e.clientX,
-      clientY: e.clientY,
-      screenX: e.screenX,
-      screenY: e.screenY,
-      pageX: e.pageX,
-      pageY: e.pageY,
-      offsetX: e.nativeEvent.offsetX,
-      offsetY: e.nativeEvent.offsetY,
-    });
 
     return { x, y };
   };
@@ -101,34 +80,25 @@ export default function AreaCapture() {
         setSelection(bounds);
 
         try {
-          // The selection is in CSS pixels relative to the overlay window
-          // The screenshot will be captured at full native resolution
-          // So we need to apply the scale factor to convert CSS pixels to device pixels
+          // Use window.devicePixelRatio for accurate scaling on this device
+          // This is more reliable than the scaleFactor from main process
+          const actualScaleFactor = window.devicePixelRatio;
 
-          // Note: overlayBounds are already in screen coordinates (CSS pixels)
-          // We don't need to add overlay position because the overlay is positioned at (0,0)
-          // relative to the screen origin
-
+          // Convert CSS pixels to physical pixels
           const captureParams = {
-            x: Math.round(x * scaleFactor),
-            y: Math.round(y * scaleFactor),
-            width: Math.round(width * scaleFactor),
-            height: Math.round(height * scaleFactor),
+            x: Math.round(x * actualScaleFactor),
+            y: Math.round(y * actualScaleFactor),
+            width: Math.round(width * actualScaleFactor),
+            height: Math.round(height * actualScaleFactor),
           };
 
-          console.log("=== Area Capture Debug ===");
-          console.log("Selection in overlay (CSS pixels):", bounds);
-          console.log("Overlay position:", overlayBounds);
-          console.log("Display bounds:", displayBounds);
-          console.log("Scale factor:", scaleFactor);
-          console.log("Capture params (device pixels):", captureParams);
-          console.log("Expected cropped size:", {
-            width: Math.round(width * scaleFactor),
-            height: Math.round(height * scaleFactor)
+          console.log("Area Capture:", {
+            cssSelection: bounds,
+            scaleFactor: actualScaleFactor,
+            physicalCapture: captureParams,
           });
-          console.log("==========================");
 
-          // Now capture screenshot with these exact coordinates
+          // Capture screenshot with these coordinates
           await window.api.captureScreenshot({
             mode: "region",
             bounds: captureParams,
@@ -242,23 +212,6 @@ export default function AreaCapture() {
               </svg>
             </div>
 
-            {/* Selection info */}
-            {selectionStyle.width && selectionStyle.height && (
-              <div
-                className="absolute pointer-events-none bg-gray-900/95 backdrop-blur-md border border-blue-500/50 rounded px-3 py-2 text-xs text-white font-mono shadow-lg space-y-1"
-                style={{
-                  left: (selectionStyle.left || 0) + (selectionStyle.width || 0) + 8,
-                  top: (selectionStyle.top || 0) + (selectionStyle.height || 0) + 8,
-                }}
-              >
-                <div className="text-blue-400 font-bold">Selection (CSS pixels):</div>
-                <div>Position: {Math.round(selectionStyle.left || 0)}, {Math.round(selectionStyle.top || 0)}</div>
-                <div>Size: {Math.round(selectionStyle.width)} × {Math.round(selectionStyle.height)}</div>
-                <div className="text-yellow-400 font-bold mt-2">Device pixels (×{scaleFactor}):</div>
-                <div>Position: {Math.round((selectionStyle.left || 0) * scaleFactor)}, {Math.round((selectionStyle.top || 0) * scaleFactor)}</div>
-                <div>Size: {Math.round(selectionStyle.width * scaleFactor)} × {Math.round(selectionStyle.height * scaleFactor)}</div>
-              </div>
-            )}
           </>
         )}
       </div>

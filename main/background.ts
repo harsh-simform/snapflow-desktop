@@ -240,13 +240,6 @@ async function createAreaCaptureOverlay() {
   const { width, height, x, y } = primaryDisplay.bounds;
   const scaleFactor = primaryDisplay.scaleFactor || 1;
 
-  console.log("[Area Capture Overlay] Display info:", {
-    bounds: primaryDisplay.bounds,
-    workArea: primaryDisplay.workArea,
-    size: primaryDisplay.size,
-    scaleFactor: primaryDisplay.scaleFactor
-  });
-
   // Create the overlay window (no need to capture screenshot beforehand)
   windowCaptureOverlay = new BrowserWindow({
     width,
@@ -282,16 +275,7 @@ async function createAreaCaptureOverlay() {
 
   // Send display info once page is loaded
   windowCaptureOverlay.webContents.once("did-finish-load", async () => {
-    console.log("[Area Capture] Page loaded, sending display info");
-
     const overlayBounds = windowCaptureOverlay?.getBounds() || primaryDisplay.bounds;
-
-    console.log("[Area Capture] Display info:", {
-      bounds: primaryDisplay.bounds,
-      size: primaryDisplay.size,
-      scaleFactor,
-      overlayBounds
-    });
 
     windowCaptureOverlay?.webContents.send("area-capture-ready", {
       scaleFactor,

@@ -182,13 +182,37 @@ export default function AnnotatePage() {
       const maxWidth = containerWidth - 48;
       const maxHeight = containerHeight - 48;
 
-      const scaleX = maxWidth / img.width;
-      const scaleY = maxHeight / img.height;
+      // Account for device pixel ratio - the image is captured at native resolution
+      // but should be displayed at CSS pixel dimensions
+      const devicePixelRatio = window.devicePixelRatio || 1;
+      const cssWidth = img.width / devicePixelRatio;
+      const cssHeight = img.height / devicePixelRatio;
+
+      console.log("[Annotate] Image loaded:", {
+        imageWidth: img.width,
+        imageHeight: img.height,
+        devicePixelRatio,
+        cssWidth,
+        cssHeight,
+        containerWidth,
+        containerHeight,
+      });
+
+      const scaleX = maxWidth / cssWidth;
+      const scaleY = maxHeight / cssHeight;
       const scale = Math.min(scaleX, scaleY, 1);
 
+      console.log("[Annotate] Calculated dimensions:", {
+        scaleX,
+        scaleY,
+        scale,
+        finalWidth: cssWidth * scale,
+        finalHeight: cssHeight * scale,
+      });
+
       setDimensions({
-        width: img.width * scale,
-        height: img.height * scale,
+        width: cssWidth * scale,
+        height: cssHeight * scale,
       });
     };
     img.src = screenshot;
@@ -465,7 +489,6 @@ export default function AnnotatePage() {
 
   const renderShape = (shape: any) => {
     const commonProps = {
-      key: shape.id,
       id: shape.id,
       onClick: () => setSelectedId(shape.id),
       onTap: () => setSelectedId(shape.id),
@@ -487,17 +510,18 @@ export default function AnnotatePage() {
 
     switch (shape.type) {
       case "line":
-        return Line && <Line {...commonProps} {...shape} />;
+        return Line && <Line key={shape.id} {...commonProps} {...shape} />;
       case "arrow":
-        return Arrow && <Arrow {...commonProps} {...shape} />;
+        return Arrow && <Arrow key={shape.id} {...commonProps} {...shape} />;
       case "rect":
-        return Rect && <Rect {...commonProps} {...shape} />;
+        return Rect && <Rect key={shape.id} {...commonProps} {...shape} />;
       case "circle":
-        return Circle && <Circle {...commonProps} {...shape} />;
+        return Circle && <Circle key={shape.id} {...commonProps} {...shape} />;
       case "text":
         return (
           Text && (
             <Text
+              key={shape.id}
               {...commonProps}
               {...shape}
               onDblClick={() => handleTextDblClick(shape.id)}

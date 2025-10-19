@@ -59,15 +59,6 @@ export class CaptureService {
       const scaleFactor = primaryDisplay.scaleFactor || 1;
       const { width, height } = primaryDisplay.size;
 
-      console.log("[Capture Service] Display info:", {
-        size: primaryDisplay.size,
-        scaleFactor,
-        thumbnailSize: {
-          width: Math.floor(width * scaleFactor),
-          height: Math.floor(height * scaleFactor),
-        },
-      });
-
       // Get desktop sources
       const sources = await desktopCapturer.getSources({
         types: ["screen", "window"],
@@ -97,25 +88,20 @@ export class CaptureService {
         throw new Error("No capture source found");
       }
 
-      console.log("[Capture Service] Source size:", source.thumbnail.getSize());
-
       // Handle region capture
       if (options.mode === "region" && options.bounds) {
-        console.log("[Capture Service] Region crop:", options.bounds);
-
-        const croppedImage = source.thumbnail.crop({
+        const cropRect = {
           x: Math.max(0, Math.floor(options.bounds.x)),
           y: Math.max(0, Math.floor(options.bounds.y)),
           width: Math.floor(options.bounds.width),
           height: Math.floor(options.bounds.height),
-        });
-        const buffer = croppedImage.toPNG();
+        };
 
-        console.log("[Capture Service] Cropped size:", croppedImage.getSize());
+        const croppedImage = source.thumbnail.crop(cropRect);
+        const buffer = croppedImage.toPNG();
 
         // Copy to clipboard
         clipboard.writeImage(croppedImage);
-        console.log("[Capture Service] Image copied to clipboard");
 
         const dataUrl = `data:image/png;base64,${buffer.toString("base64")}`;
         return { dataUrl, buffer };
@@ -126,7 +112,6 @@ export class CaptureService {
 
       // Copy to clipboard
       clipboard.writeImage(source.thumbnail);
-      console.log("[Capture Service] Screenshot copied to clipboard");
 
       const dataUrl = `data:image/png;base64,${buffer.toString("base64")}`;
       return { dataUrl, buffer };
