@@ -74,6 +74,7 @@
 - 🔔 **Toast Notifications** - User-friendly feedback with Sonner
 - 💻 **Cross-Platform** - macOS support (Windows/Linux coming soon)
 - 📱 **Responsive Design** - Adaptive layout for different screen sizes
+- 📄 **Pagination** - Efficient browsing with customizable items per page (6, 12, 24, 48)
 
 ---
 
@@ -281,14 +282,22 @@ For detailed setup instructions, see [SUPABASE_SETUP.md](SUPABASE_SETUP.md)
    - **Status**: All, Local, Synced
    - **Tags**: Filter by tags
    - **Search**: Search by title or ID
-3. Sort by date or name
-4. Click issue card to preview
+3. Sort by date or name (ascending/descending)
+4. Navigate pages and adjust items per page (6, 12, 24, or 48)
+5. Click issue card to preview in full resolution
 
 #### Syncing to Platforms
 1. Open issue preview or hover over issue card
 2. Click **GitHub** or **Zoho** button
-3. Wait for sync to complete
-4. View external issue link in preview
+3. Wait for sync to complete (toast notifications show progress)
+4. View sync status badges (Local, Syncing, Synced, Failed)
+5. External issue links are stored for future reference
+
+#### Editing Issues
+1. Click issue card to open preview dialog
+2. Edit description by clicking **Edit** button
+3. Add/remove tags using the chips input
+4. Changes are saved automatically to local storage and Supabase
 
 ### Keyboard Shortcuts
 
