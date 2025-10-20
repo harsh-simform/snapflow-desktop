@@ -44,6 +44,11 @@ export default [
         require: 'readonly',
         Buffer: 'readonly',
         global: 'readonly',
+        // Timers
+        setTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearTimeout: 'readonly',
+        clearInterval: 'readonly',
         // ES2021 globals
         Promise: 'readonly',
         Symbol: 'readonly',

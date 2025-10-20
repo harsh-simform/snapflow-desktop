@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import Store from "electron-store";
 
 // Singleton pattern for Supabase Client in Electron
 // Prevents multiple instances during hot-reload in development
@@ -9,6 +10,12 @@ declare global {
 // Get Supabase configuration from environment variables
 const getSupabaseUrl = () => process.env.SUPABASE_URL || "";
 const getSupabaseAnonKey = () => process.env.SUPABASE_ANON_KEY || "";
+
+// Create a separate store for Supabase internal session management
+const supabaseStore = new Store<Record<string, string>>({
+  name: "snapflow-supabase-storage",
+  defaults: {},
+});
 
 // Lazy initialization function for Supabase client
 function initializeSupabase(): SupabaseClient | null {
@@ -26,8 +33,34 @@ function initializeSupabase(): SupabaseClient | null {
   const client = createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
       autoRefreshToken: true,
-      persistSession: false, // We handle session persistence manually via electron-store
+      persistSession: true, // Enable session persistence for automatic token refresh
       detectSessionInUrl: false,
+      storage: {
+        // Custom storage adapter that uses electron-store
+        // This allows Supabase to persist its session data properly in Electron
+        getItem: (key: string) => {
+          if (typeof window !== "undefined") {
+            return null; // In renderer process, let default localStorage handle it
+          }
+          // In main process, retrieve from electron-store
+          const value = supabaseStore.get(key);
+          return value || null;
+        },
+        setItem: (key: string, value: string) => {
+          if (typeof window !== "undefined") {
+            return; // In renderer process, let default localStorage handle it
+          }
+          // In main process, store in electron-store
+          supabaseStore.set(key, value);
+        },
+        removeItem: (key: string) => {
+          if (typeof window !== "undefined") {
+            return; // In renderer process, let default localStorage handle it
+          }
+          // In main process, remove from electron-store
+          supabaseStore.delete(key);
+        },
+      },
     },
   });
 

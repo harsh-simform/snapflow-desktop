@@ -13,7 +13,7 @@ const handler = {
       ipcRenderer.removeListener(channel, subscription);
     };
   },
-  invoke(channel: string, ...args: any[]) {
+  invoke(channel: string, ...args: unknown[]) {
     return ipcRenderer.invoke(channel, ...args);
   },
 };
@@ -46,7 +46,7 @@ const api = {
       thumbnailPath,
     }),
   listIssues: (userId: string) => ipcRenderer.invoke("issue:list", { userId }),
-  updateIssue: (issueId: string, updates: any) =>
+  updateIssue: (issueId: string, updates: Record<string, unknown>) =>
     ipcRenderer.invoke("issue:update", { issueId, updates }),
   deleteIssue: (issueId: string) =>
     ipcRenderer.invoke("issue:delete", { issueId }),
@@ -78,9 +78,9 @@ const api = {
 
   // Connector methods
   listConnectors: () => ipcRenderer.invoke("connector:list"),
-  addConnector: (connector: any) =>
+  addConnector: (connector: Record<string, unknown>) =>
     ipcRenderer.invoke("connector:add", connector),
-  updateConnector: (id: string, updates: any) =>
+  updateConnector: (id: string, updates: Record<string, unknown>) =>
     ipcRenderer.invoke("connector:update", { id, updates }),
   deleteConnector: (id: string) =>
     ipcRenderer.invoke("connector:delete", { id }),
@@ -104,17 +104,34 @@ const api = {
   showWindow: () => ipcRenderer.invoke("app:show-window"),
   hideWindow: () => ipcRenderer.invoke("app:hide-window"),
 
+  // Update methods
+  checkForUpdates: () => ipcRenderer.invoke("update:check"),
+  downloadUpdate: () => ipcRenderer.invoke("update:download"),
+  installUpdate: () => ipcRenderer.invoke("update:install"),
+  getUpdateInfo: () => ipcRenderer.invoke("update:get-info"),
+
+  // Debug methods
+  testCapture: () => ipcRenderer.invoke("debug:test-capture"),
+
   // Event listeners
-  onScreenshotCaptured: (callback: (data: any) => void) => {
-    const subscription = (_event: IpcRendererEvent, data: any) =>
-      callback(data);
+  onScreenshotCaptured: (
+    callback: (data: { dataUrl: string; mode: string }) => void
+  ) => {
+    const subscription = (
+      _event: IpcRendererEvent,
+      data: { dataUrl: string; mode: string }
+    ) => callback(data);
     ipcRenderer.on("screenshot-captured", subscription);
     return () =>
       ipcRenderer.removeListener("screenshot-captured", subscription);
   },
-  onBackgroundScreenshot: (callback: (data: any) => void) => {
-    const subscription = (_event: IpcRendererEvent, data: any) =>
-      callback(data);
+  onBackgroundScreenshot: (
+    callback: (data: { dataUrl: string; mode: string }) => void
+  ) => {
+    const subscription = (
+      _event: IpcRendererEvent,
+      data: { dataUrl: string; mode: string }
+    ) => callback(data);
     ipcRenderer.on("background-screenshot", subscription);
     return () =>
       ipcRenderer.removeListener("background-screenshot", subscription);
@@ -125,11 +142,25 @@ const api = {
     ipcRenderer.on("navigate", subscription);
     return () => ipcRenderer.removeListener("navigate", subscription);
   },
-  onAvailableWindows: (callback: (windows: any[]) => void) => {
-    const subscription = (_event: IpcRendererEvent, windows: any[]) =>
-      callback(windows);
+  onAvailableWindows: (
+    callback: (windows: Array<{ id: string; name: string }>) => void
+  ) => {
+    const subscription = (
+      _event: IpcRendererEvent,
+      windows: Array<{ id: string; name: string }>
+    ) => callback(windows);
     ipcRenderer.on("available-windows", subscription);
     return () => ipcRenderer.removeListener("available-windows", subscription);
+  },
+  onUpdateStatus: (
+    callback: (status: { event: string; data?: unknown }) => void
+  ) => {
+    const subscription = (
+      _event: IpcRendererEvent,
+      status: { event: string; data?: unknown }
+    ) => callback(status);
+    ipcRenderer.on("update-status", subscription);
+    return () => ipcRenderer.removeListener("update-status", subscription);
   },
 };
 

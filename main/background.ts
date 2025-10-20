@@ -1,4 +1,4 @@
-import "dotenv/config";
+import dotenv from "dotenv";
 import path from "path";
 import electron from "electron";
 import serve from "electron-serve";
@@ -7,13 +7,56 @@ import { authService } from "./services/auth";
 import { issueService } from "./services/issues";
 import { captureService } from "./services/capture";
 import { connectorService } from "./services/connectors";
+import { updaterService } from "./services/updater";
 import { storageManager } from "./utils/storage";
 import { sessionManager } from "./utils/session";
 import fs from "fs";
 
-const { app, ipcMain, Tray, Menu, nativeImage, BrowserWindow, protocol } = electron;
+const {
+  app,
+  ipcMain,
+  Tray,
+  Menu,
+  nativeImage,
+  BrowserWindow,
+  protocol,
+  dialog,
+  shell,
+} = electron;
 
+// Determine if we're in production
 const isProd = process.env.NODE_ENV === "production";
+
+// Load environment variables
+// In production, .env is in the app.asar or app directory
+// In development, .env is in the project root
+if (isProd) {
+  // In production, try multiple possible locations
+  const possibleEnvPaths = [
+    path.join(process.resourcesPath, "..", ".env"), // app directory
+    path.join(process.resourcesPath, ".env"), // resources directory
+    path.join(__dirname, "..", ".env"), // app directory
+  ];
+
+  let envLoaded = false;
+  for (const envPath of possibleEnvPaths) {
+    if (fs.existsSync(envPath)) {
+      console.log("[ENV] Loading .env from:", envPath);
+      dotenv.config({ path: envPath });
+      envLoaded = true;
+      break;
+    }
+  }
+
+  if (!envLoaded) {
+    console.warn(
+      "[ENV] No .env file found in production, using existing environment variables"
+    );
+  }
+} else {
+  // In development, load from project root
+  dotenv.config();
+}
 
 // Register custom protocol scheme before app is ready (if available)
 if (protocol && protocol.registerSchemesAsPrivileged) {
@@ -120,9 +163,12 @@ async function createMainWindow() {
 }
 
 function createSystemTray() {
-  const image = nativeImage.createFromPath(
-    path.join(__dirname, "../resources/tray-icon.png")
-  );
+  // Get tray icon path - different for dev vs production
+  const trayIconPath = isProd
+    ? path.join(process.resourcesPath, "tray-icon.png")
+    : path.join(__dirname, "../resources/tray-icon.png");
+
+  const image = nativeImage.createFromPath(trayIconPath);
 
   // Resize for tray
   const trayIcon = image.resize({ width: 16, height: 16 });
@@ -170,8 +216,18 @@ async function createWindowCaptureOverlay() {
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width, height, x, y } = primaryDisplay.bounds;
 
+  // Check permission before attempting capture
+  const hasPermission = await captureService.checkScreenRecordingPermission();
+  if (!hasPermission) {
+    console.log("[Window Capture] No screen recording permission");
+    mainWindow?.show();
+    return;
+  }
+
   // Capture screenshot first to use as background
-  const { dataUrl } = await captureService.captureScreenshot({ mode: "fullscreen" });
+  const { dataUrl } = await captureService.captureScreenshot({
+    mode: "fullscreen",
+  });
 
   // Get all available windows before creating overlay
   const availableWindows = await captureService.getAvailableWindows();
@@ -188,7 +244,7 @@ async function createWindowCaptureOverlay() {
     movable: false,
     hasShadow: false,
     enableLargerThanScreen: true,
-    backgroundColor: '#00000000', // Fully transparent background
+    backgroundColor: "#00000000", // Fully transparent background
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -198,10 +254,12 @@ async function createWindowCaptureOverlay() {
 
   // Set always on top but don't use fullscreen mode (which can break transparency on macOS)
   windowCaptureOverlay.setAlwaysOnTop(true, "screen-saver", 1);
-  windowCaptureOverlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  windowCaptureOverlay.setVisibleOnAllWorkspaces(true, {
+    visibleOnFullScreen: true,
+  });
 
   // Ensure dock icon stays visible on macOS
-  if (process.platform === 'darwin') {
+  if (process.platform === "darwin") {
     app.dock?.show();
   }
 
@@ -210,13 +268,20 @@ async function createWindowCaptureOverlay() {
     await windowCaptureOverlay.loadURL("app://./window-capture");
   } else {
     const port = process.argv[2];
-    await windowCaptureOverlay.loadURL(`http://localhost:${port}/window-capture`);
+    await windowCaptureOverlay.loadURL(
+      `http://localhost:${port}/window-capture`
+    );
   }
 
   // Send background screenshot and available windows to the renderer
   windowCaptureOverlay.webContents.once("did-finish-load", () => {
-    windowCaptureOverlay?.webContents.send("background-screenshot", { dataUrl });
-    windowCaptureOverlay?.webContents.send("available-windows", availableWindows);
+    windowCaptureOverlay?.webContents.send("background-screenshot", {
+      dataUrl,
+    });
+    windowCaptureOverlay?.webContents.send(
+      "available-windows",
+      availableWindows
+    );
   });
 
   // Handle window close
@@ -228,8 +293,16 @@ async function createWindowCaptureOverlay() {
 async function createAreaCaptureOverlay() {
   const { screen } = electron;
 
+  // Check permission before attempting capture
+  const hasPermission = await captureService.checkScreenRecordingPermission();
+  if (!hasPermission) {
+    console.log("[Area Capture] No screen recording permission");
+    mainWindow?.show();
+    return;
+  }
+
   // Ensure dock icon stays visible on macOS
-  if (process.platform === 'darwin') {
+  if (process.platform === "darwin") {
     app.dock?.show();
   }
 
@@ -253,7 +326,7 @@ async function createAreaCaptureOverlay() {
     movable: false,
     hasShadow: false,
     enableLargerThanScreen: true,
-    backgroundColor: '#00000000', // Fully transparent background
+    backgroundColor: "#00000000", // Fully transparent background
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -263,7 +336,9 @@ async function createAreaCaptureOverlay() {
 
   // Set always on top but don't use fullscreen mode (which can break transparency on macOS)
   windowCaptureOverlay.setAlwaysOnTop(true, "screen-saver", 1);
-  windowCaptureOverlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  windowCaptureOverlay.setVisibleOnAllWorkspaces(true, {
+    visibleOnFullScreen: true,
+  });
 
   // Load the area capture page
   if (isProd) {
@@ -275,12 +350,13 @@ async function createAreaCaptureOverlay() {
 
   // Send display info once page is loaded
   windowCaptureOverlay.webContents.once("did-finish-load", async () => {
-    const overlayBounds = windowCaptureOverlay?.getBounds() || primaryDisplay.bounds;
+    const overlayBounds =
+      windowCaptureOverlay?.getBounds() || primaryDisplay.bounds;
 
     windowCaptureOverlay?.webContents.send("area-capture-ready", {
       scaleFactor,
       displayBounds: primaryDisplay.bounds,
-      overlayBounds
+      overlayBounds,
     });
   });
 
@@ -294,10 +370,33 @@ async function handleScreenshotCapture(
   mode: "fullscreen" | "window" | "region"
 ) {
   try {
+    // Check permission first to avoid getting stuck in a loop
+    const hasPermission = await captureService.checkScreenRecordingPermission();
+    if (!hasPermission) {
+      console.log("[Screenshot] No screen recording permission detected");
+      // Show dialog to user explaining they need to restart the app
+      const result = await dialog.showMessageBox(mainWindow!, {
+        type: "warning",
+        title: "Screen Recording Permission Required",
+        message: "SnapFlow needs Screen Recording permission",
+        detail:
+          "Please grant Screen Recording permission in System Settings > Privacy & Security > Screen Recording, then completely quit and restart SnapFlow.\n\nNote: Simply closing the window won't work - you must fully quit the app (Cmd+Q) and restart it.",
+        buttons: ["Open System Settings", "OK"],
+      });
+
+      if (result.response === 0) {
+        // Open System Settings to Screen Recording
+        shell.openExternal(
+          "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+        );
+      }
+      return;
+    }
+
     // For window mode, create a transparent overlay for window selection
     if (mode === "window") {
       // Keep app in dock even when hiding main window
-      if (process.platform === 'darwin') {
+      if (process.platform === "darwin") {
         app.dock?.show();
       }
 
@@ -313,7 +412,7 @@ async function handleScreenshotCapture(
 
     if (mode === "region") {
       // Keep app in dock even when hiding main window
-      if (process.platform === 'darwin') {
+      if (process.platform === "darwin") {
         app.dock?.show();
       }
 
@@ -331,7 +430,7 @@ async function handleScreenshotCapture(
     console.log("[Tray] Starting fullscreen capture...");
 
     // Keep app in dock even when hiding main window
-    if (process.platform === 'darwin') {
+    if (process.platform === "darwin") {
       app.dock?.show();
     }
 
@@ -340,7 +439,10 @@ async function handleScreenshotCapture(
 
     console.log("[Tray] Capturing screenshot...");
     const { dataUrl } = await captureService.captureScreenshot({ mode });
-    console.log("[Tray] Screenshot captured, dataUrl length:", dataUrl?.length || 0);
+    console.log(
+      "[Tray] Screenshot captured, dataUrl length:",
+      dataUrl?.length || 0
+    );
 
     // Store screenshot data globally so annotate page can retrieve it
     pendingScreenshot = { dataUrl, mode };
@@ -384,60 +486,69 @@ if (app && app.requestSingleInstanceLock) {
     (async () => {
       await app.whenReady();
 
-    // Set application icon for dock (macOS) and taskbar
-    const iconPath = isProd
-      ? path.join(process.resourcesPath, "icon.png")
-      : path.join(__dirname, "../resources/icon.png");
+      // Set application icon for dock (macOS) and taskbar
+      const iconPath = isProd
+        ? path.join(process.resourcesPath, "icon.png")
+        : path.join(__dirname, "../resources/icon.png");
 
-    const appIcon = nativeImage.createFromPath(iconPath);
-    if (process.platform === 'darwin') {
-      app.dock?.setIcon(appIcon);
-      // Keep app in dock permanently - never hide
-      // This prevents the dock icon from disappearing during overlay/capture
-      app.dock?.show();
-    }
-
-    // Prevent app from hiding from dock when all windows are closed
-    // This ensures the dock icon is always visible
-    if (process.platform === 'darwin') {
-      // Force the app to always show in dock, even with no windows
-      app.dock?.show();
-    }
-
-    // Register custom protocol for local file access
-    protocol.registerFileProtocol("snapflow", (request, callback) => {
-      const url = request.url.replace("snapflow://", "");
-      try {
-        const decodedPath = decodeURIComponent(url);
-        console.log("Loading file:", decodedPath);
-
-        // Check if file exists
-        if (fs.existsSync(decodedPath)) {
-          callback({ path: decodedPath });
-        } else {
-          console.error("File not found:", decodedPath);
-          callback({ error: -6 }); // FILE_NOT_FOUND
-        }
-      } catch (error) {
-        console.error("Error loading file:", error);
-        callback({ error: -2 }); // FAILED
+      const appIcon = nativeImage.createFromPath(iconPath);
+      if (process.platform === "darwin") {
+        app.dock?.setIcon(appIcon);
+        // Keep app in dock permanently - never hide
+        // This prevents the dock icon from disappearing during overlay/capture
+        app.dock?.show();
       }
-    });
 
-    // Initialize session from persistent storage
-    await sessionManager.initialize();
+      // Prevent app from hiding from dock when all windows are closed
+      // This ensures the dock icon is always visible
+      if (process.platform === "darwin") {
+        // Force the app to always show in dock, even with no windows
+        app.dock?.show();
+      }
 
-    // Initialize storage
-    await storageManager.ensureDirectories();
+      // Register custom protocol for local file access
+      protocol.registerFileProtocol("snapflow", (request, callback) => {
+        const url = request.url.replace("snapflow://", "");
+        try {
+          const decodedPath = decodeURIComponent(url);
+          console.log("Loading file:", decodedPath);
 
-    // Create main window
-    await createMainWindow();
+          // Check if file exists
+          if (fs.existsSync(decodedPath)) {
+            callback({ path: decodedPath });
+          } else {
+            console.error("File not found:", decodedPath);
+            callback({ error: -6 }); // FILE_NOT_FOUND
+          }
+        } catch (error) {
+          console.error("Error loading file:", error);
+          callback({ error: -2 }); // FAILED
+        }
+      });
+
+      // Initialize session from persistent storage
+      await sessionManager.initialize();
+
+      // Initialize storage
+      await storageManager.ensureDirectories();
+
+      // Create main window
+      await createMainWindow();
 
       // Setup IPC handlers
       setupIPCHandlers();
 
       // Create system tray
       createSystemTray();
+
+      // Initialize auto-updater (only in production)
+      if (isProd && mainWindow) {
+        updaterService.setMainWindow(mainWindow);
+        // Check for updates 5 seconds after app starts
+        setTimeout(() => {
+          updaterService.checkForUpdates();
+        }, 5000);
+      }
     })();
   }
 }
@@ -455,154 +566,242 @@ function setupIPCHandlers() {
 
   // Auth handlers
   ipcMain.handle("user:create", async (_event, { name, email, password }) => {
-  try {
-    const user = await authService.createUser(name, email, password);
-    // Store user in session (same as login)
-    await sessionManager.setUser(user);
-    return { success: true, data: user };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle("user:login", async (_event, { email, password }) => {
-  try {
-    const user = await authService.login(email, password);
-    // Store user in session
-    await sessionManager.setUser(user);
-    return { success: true, data: user };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle("user:get", async (_event, userId?: string) => {
-  try {
-    // If userId provided, fetch from database
-    if (userId) {
-      const user = await authService.getUserById(userId);
-      return { success: true, data: user };
-    }
-    // Otherwise return current session user
-    const user = sessionManager.getUser();
-    return { success: true, data: user };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle("user:logout", async () => {
-  try {
-    await sessionManager.clearUser();
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-// Issue handlers
-ipcMain.handle(
-  "issue:create",
-  async (
-    _event,
-    { userId, title, type, filePath, description, thumbnailPath }
-  ) => {
     try {
-      const issue = await issueService.createIssue(
-        userId,
-        title,
-        type,
-        filePath,
-        description,
-        thumbnailPath
-      );
+      const user = await authService.createUser(name, email, password);
+      // Store user in session (same as login)
+      await sessionManager.setUser(user);
+      return { success: true, data: user };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("user:login", async (_event, { email, password }) => {
+    try {
+      const user = await authService.login(email, password);
+      // Store user in session
+      await sessionManager.setUser(user);
+      return { success: true, data: user };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("user:get", async (_event, userId?: string) => {
+    try {
+      // If userId provided, fetch from database
+      if (userId) {
+        const user = await authService.getUserById(userId);
+        return { success: true, data: user };
+      }
+      // Otherwise return current session user
+      const user = sessionManager.getUser();
+      return { success: true, data: user };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("user:logout", async () => {
+    try {
+      await sessionManager.clearUser();
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Issue handlers
+  ipcMain.handle(
+    "issue:create",
+    async (
+      _event,
+      { userId, title, type, filePath, description, thumbnailPath }
+    ) => {
+      try {
+        const issue = await issueService.createIssue(
+          userId,
+          title,
+          type,
+          filePath,
+          description,
+          thumbnailPath
+        );
+        return { success: true, data: issue };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    }
+  );
+
+  ipcMain.handle("issue:list", async (_event, { userId }) => {
+    try {
+      const issues = issueService.getIssues(userId);
+      return { success: true, data: issues };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("issue:update", async (_event, { issueId, updates }) => {
+    try {
+      const issue = await issueService.updateIssue(issueId, updates);
       return { success: true, data: issue };
     } catch (error) {
       return { success: false, error: error.message };
     }
-  }
-);
+  });
 
-ipcMain.handle("issue:list", async (_event, { userId }) => {
-  try {
-    const issues = issueService.getIssues(userId);
-    return { success: true, data: issues };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle("issue:update", async (_event, { issueId, updates }) => {
-  try {
-    const issue = await issueService.updateIssue(issueId, updates);
-    return { success: true, data: issue };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle("issue:delete", async (_event, { issueId }) => {
-  try {
-    await issueService.deleteIssue(issueId);
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-// Capture handlers - Core functions
-ipcMain.handle("capture:full-screen", async () => {
-  try {
-    const buffer = await captureService.captureFullScreen();
-    const dataUrl = `data:image/png;base64,${buffer.toString("base64")}`;
-    return { success: true, data: { buffer: Array.from(buffer), dataUrl } };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle("capture:active-window", async () => {
-  try {
-    const buffer = await captureService.captureActiveWindow();
-    const dataUrl = `data:image/png;base64,${buffer.toString("base64")}`;
-    return { success: true, data: { buffer: Array.from(buffer), dataUrl } };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle("capture:selected-region", async (_event, { bounds }) => {
-  try {
-    const buffer = await captureService.captureSelectedRegion(bounds);
-    const dataUrl = `data:image/png;base64,${buffer.toString("base64")}`;
-    return { success: true, data: { buffer: Array.from(buffer), dataUrl } };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-// Legacy capture handler (kept for backward compatibility)
-ipcMain.handle(
-  "capture:screenshot",
-  async (_event, { mode, windowId, bounds }) => {
+  ipcMain.handle("issue:delete", async (_event, { issueId }) => {
     try {
-      // Close overlay window if it exists (for region and window capture)
+      await issueService.deleteIssue(issueId);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Capture handlers - Core functions
+  ipcMain.handle("capture:full-screen", async () => {
+    try {
+      const result = await captureService.captureScreenshot({
+        mode: "fullscreen",
+      });
+      return {
+        success: true,
+        data: { buffer: Array.from(result.buffer), dataUrl: result.dataUrl },
+      };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("capture:active-window", async () => {
+    try {
+      const result = await captureService.captureScreenshot({ mode: "window" });
+      return {
+        success: true,
+        data: { buffer: Array.from(result.buffer), dataUrl: result.dataUrl },
+      };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("capture:selected-region", async (_event, { bounds }) => {
+    try {
+      const result = await captureService.captureScreenshot({
+        mode: "region",
+        bounds,
+      });
+      return {
+        success: true,
+        data: { buffer: Array.from(result.buffer), dataUrl: result.dataUrl },
+      };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Legacy capture handler (kept for backward compatibility)
+  ipcMain.handle(
+    "capture:screenshot",
+    async (_event, { mode, windowId, bounds }) => {
+      try {
+        // Close overlay window if it exists (for region and window capture)
+        if (windowCaptureOverlay) {
+          windowCaptureOverlay.close();
+          windowCaptureOverlay = null;
+        }
+
+        const result = await captureService.captureScreenshot({
+          mode,
+          windowId,
+          bounds,
+        });
+
+        // Store screenshot data globally
+        pendingScreenshot = { dataUrl: result.dataUrl, mode };
+        console.log("[IPC Capture] Screenshot stored in pendingScreenshot");
+
+        // Navigate to annotate page
+        mainWindow?.show();
+        if (isProd) {
+          await mainWindow?.loadURL("app://./annotate");
+        } else {
+          const port = process.argv[2];
+          await mainWindow?.loadURL(`http://localhost:${port}/annotate`);
+        }
+
+        return { success: true, data: result };
+      } catch (error) {
+        console.error("[IPC Capture] Error:", error);
+        // Close overlay and show main window even on error
+        if (windowCaptureOverlay) {
+          windowCaptureOverlay.close();
+          windowCaptureOverlay = null;
+        }
+        mainWindow?.show();
+        return { success: false, error: error.message };
+      }
+    }
+  );
+
+  ipcMain.handle("capture:check-permission", async () => {
+    try {
+      // Clear cache to get fresh permission status
+      captureService.clearPermissionCache();
+      const hasPermission =
+        await captureService.checkScreenRecordingPermission();
+      return { success: true, data: hasPermission };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("capture:get-windows", async () => {
+    try {
+      const windows = await captureService.getAvailableWindows();
+      return { success: true, data: windows };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Handle window selection from overlay
+  ipcMain.handle("capture:select-window", async (_event, { windowId }) => {
+    try {
+      console.log("[Window Capture] Selected window ID:", windowId);
+
+      // Close the overlay
       if (windowCaptureOverlay) {
         windowCaptureOverlay.close();
         windowCaptureOverlay = null;
       }
 
+      // Wait a bit for overlay to close
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      console.log("[Window Capture] Capturing window screenshot...");
+      // Capture the selected window
       const result = await captureService.captureScreenshot({
-        mode,
+        mode: "window",
         windowId,
-        bounds,
       });
 
+      console.log(
+        "[Window Capture] Screenshot captured, dataUrl length:",
+        result.dataUrl?.length || 0
+      );
+
       // Store screenshot data globally
-      pendingScreenshot = { dataUrl: result.dataUrl, mode };
-      console.log("[IPC Capture] Screenshot stored in pendingScreenshot");
+      pendingScreenshot = { dataUrl: result.dataUrl, mode: "window" };
+      console.log("[Window Capture] Stored pending screenshot");
 
       // Navigate to annotate page
+      console.log(
+        "[Window Capture] Showing main window and navigating to annotate page..."
+      );
       mainWindow?.show();
       if (isProd) {
         await mainWindow?.loadURL("app://./annotate");
@@ -610,249 +809,271 @@ ipcMain.handle(
         const port = process.argv[2];
         await mainWindow?.loadURL(`http://localhost:${port}/annotate`);
       }
+      console.log("[Window Capture] Navigation complete");
 
       return { success: true, data: result };
     } catch (error) {
-      console.error("[IPC Capture] Error:", error);
-      // Close overlay and show main window even on error
-      if (windowCaptureOverlay) {
-        windowCaptureOverlay.close();
-        windowCaptureOverlay = null;
-      }
+      console.error("[Window Capture] Error:", error);
+      // Show main window even on error
       mainWindow?.show();
       return { success: false, error: error.message };
     }
-  }
-);
+  });
 
-ipcMain.handle("capture:check-permission", async () => {
-  try {
-    const hasPermission = await captureService.checkScreenRecordingPermission();
-    return { success: true, data: hasPermission };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle("capture:get-windows", async () => {
-  try {
-    const windows = await captureService.getAvailableWindows();
-    return { success: true, data: windows };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-// Handle window selection from overlay
-ipcMain.handle("capture:select-window", async (_event, { windowId }) => {
-  try {
-    console.log("[Window Capture] Selected window ID:", windowId);
-
-    // Close the overlay
+  // Handle cancel from window capture overlay
+  ipcMain.handle("capture:cancel-window-select", () => {
     if (windowCaptureOverlay) {
       windowCaptureOverlay.close();
       windowCaptureOverlay = null;
     }
-
-    // Wait a bit for overlay to close
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
-    console.log("[Window Capture] Capturing window screenshot...");
-    // Capture the selected window
-    const result = await captureService.captureScreenshot({
-      mode: "window",
-      windowId,
-    });
-
-    console.log("[Window Capture] Screenshot captured, dataUrl length:", result.dataUrl?.length || 0);
-
-    // Store screenshot data globally
-    pendingScreenshot = { dataUrl: result.dataUrl, mode: "window" };
-    console.log("[Window Capture] Stored pending screenshot");
-
-    // Navigate to annotate page
-    console.log("[Window Capture] Showing main window and navigating to annotate page...");
     mainWindow?.show();
-    if (isProd) {
-      await mainWindow?.loadURL("app://./annotate");
-    } else {
-      const port = process.argv[2];
-      await mainWindow?.loadURL(`http://localhost:${port}/annotate`);
-    }
-    console.log("[Window Capture] Navigation complete");
-
-    return { success: true, data: result };
-  } catch (error) {
-    console.error("[Window Capture] Error:", error);
-    // Show main window even on error
-    mainWindow?.show();
-    return { success: false, error: error.message };
-  }
-});
-
-// Handle cancel from window capture overlay
-ipcMain.handle("capture:cancel-window-select", () => {
-  if (windowCaptureOverlay) {
-    windowCaptureOverlay.close();
-    windowCaptureOverlay = null;
-  }
-  mainWindow?.show();
-  return { success: true };
-});
-
-ipcMain.handle("capture:save", async (_event, { issueId, buffer }) => {
-  try {
-    const filePath = await captureService.saveScreenshot(
-      issueId,
-      Buffer.from(buffer)
-    );
-    const thumbnailPath = await captureService.createThumbnail(
-      Buffer.from(buffer),
-      issueId
-    );
-    return { success: true, data: { filePath, thumbnailPath } };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle("capture:get-pending", async () => {
-  console.log("[IPC] Getting pending screenshot, exists:", !!pendingScreenshot);
-  if (pendingScreenshot) {
-    const data = pendingScreenshot;
-    pendingScreenshot = null; // Clear after retrieval
-    console.log("[IPC] Returning pending screenshot, length:", data.dataUrl?.length || 0);
-    return { success: true, data };
-  }
-  return { success: false, error: "No pending screenshot" };
-});
-
-// Connector handlers
-ipcMain.handle("connector:list", async () => {
-  try {
-    const connectors = connectorService.getConnectors();
-    return { success: true, data: connectors };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle("connector:add", async (_event, connector) => {
-  try {
-    const newConnector = connectorService.addConnector(connector);
-    return { success: true, data: newConnector };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle("connector:update", async (_event, { id, updates }) => {
-  try {
-    const connector = connectorService.updateConnector(id, updates);
-    return { success: true, data: connector };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle("connector:delete", async (_event, { id }) => {
-  try {
-    connectorService.deleteConnector(id);
     return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
+  });
 
-// Sync handler
-ipcMain.handle("sync:issue", async (_event, { issueId, connectorType }) => {
-  try {
-    const issue = issueService.getIssueById(issueId);
-    if (!issue) {
-      throw new Error("Issue not found");
+  ipcMain.handle("capture:save", async (_event, { issueId, buffer }) => {
+    try {
+      const filePath = await captureService.saveScreenshot(
+        issueId,
+        Buffer.from(buffer)
+      );
+      const thumbnailPath = await captureService.createThumbnail(
+        Buffer.from(buffer),
+        issueId
+      );
+      return { success: true, data: { filePath, thumbnailPath } };
+    } catch (error) {
+      return { success: false, error: error.message };
     }
+  });
 
-    const connector = connectorService.getConnectorByType(connectorType);
-    if (!connector || !connector.enabled) {
-      throw new Error(`${connectorType} connector not configured`);
+  ipcMain.handle("capture:get-pending", async () => {
+    console.log(
+      "[IPC] Getting pending screenshot, exists:",
+      !!pendingScreenshot
+    );
+    if (pendingScreenshot) {
+      const data = pendingScreenshot;
+      pendingScreenshot = null; // Clear after retrieval
+      console.log(
+        "[IPC] Returning pending screenshot, length:",
+        data.dataUrl?.length || 0
+      );
+      return { success: true, data };
     }
+    return { success: false, error: "No pending screenshot" };
+  });
 
-    await issueService.updateSyncStatus(issueId, "syncing");
-
-    let result: any;
-    if (connectorType === "github") {
-      result = await connectorService.syncToGitHub(connector, {
-        title: issue.title,
-        description: issue.description,
-        filePath: issue.filePath,
-      });
-      await issueService.updateSyncStatus(issueId, "synced", {
-        platform: "github",
-        externalId: result.issueNumber.toString(),
-        url: result.url,
-      });
-    } else if (connectorType === "zoho") {
-      result = await connectorService.syncToZoho(connector, {
-        title: issue.title,
-        description: issue.description,
-        filePath: issue.filePath,
-      });
-      await issueService.updateSyncStatus(issueId, "synced", {
-        platform: "zoho",
-        externalId: result.bugId,
-        url: result.url,
-      });
+  // Connector handlers
+  ipcMain.handle("connector:list", async () => {
+    try {
+      const connectors = connectorService.getConnectors();
+      return { success: true, data: connectors };
+    } catch (error) {
+      return { success: false, error: error.message };
     }
+  });
 
-    return { success: true, data: result };
-  } catch (error) {
-    await issueService.updateSyncStatus(issueId, "failed");
-    return { success: false, error: error.message };
-  }
-});
-
-// Note: Database configuration handlers removed - Supabase config is now via environment variables
-
-// File access handler
-ipcMain.handle("file:read-image", async (_event, { filePath }) => {
-  try {
-    if (!fs.existsSync(filePath)) {
-      return { success: false, error: "File not found" };
+  ipcMain.handle("connector:add", async (_event, connector) => {
+    try {
+      const newConnector = connectorService.addConnector(connector);
+      return { success: true, data: newConnector };
+    } catch (error) {
+      return { success: false, error: error.message };
     }
+  });
 
-    const buffer = fs.readFileSync(filePath);
-    const base64 = buffer.toString("base64");
-    const ext = path.extname(filePath).toLowerCase();
-    const mimeType = ext === ".png" ? "image/png" : ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : "image/png";
-    const dataUrl = `data:${mimeType};base64,${base64}`;
+  ipcMain.handle("connector:update", async (_event, { id, updates }) => {
+    try {
+      const connector = connectorService.updateConnector(id, updates);
+      return { success: true, data: connector };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
 
-    return { success: true, data: dataUrl };
-  } catch (error) {
-    console.error("Error reading image:", error);
-    return { success: false, error: error.message };
-  }
-});
+  ipcMain.handle("connector:delete", async (_event, { id }) => {
+    try {
+      connectorService.deleteConnector(id);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
 
-// App control handlers
-ipcMain.handle("app:quit", () => {
-  isQuitting = true;
-  app.quit();
-});
+  // Sync handler
+  ipcMain.handle("sync:issue", async (_event, { issueId, connectorType }) => {
+    try {
+      const issue = issueService.getIssueById(issueId);
+      if (!issue) {
+        throw new Error("Issue not found");
+      }
 
-ipcMain.handle("app:show-window", () => {
-  mainWindow?.show();
-});
+      const connector = connectorService.getConnectorByType(connectorType);
+      if (!connector || !connector.enabled) {
+        throw new Error(`${connectorType} connector not configured`);
+      }
+
+      await issueService.updateSyncStatus(issueId, "syncing");
+
+      let result: { issueUrl: string } | null = null;
+      if (connectorType === "github") {
+        result = await connectorService.syncToGitHub(connector, {
+          title: issue.title,
+          description: issue.description,
+          filePath: issue.filePath,
+        });
+        await issueService.updateSyncStatus(issueId, "synced", {
+          platform: "github",
+          externalId: result.issueNumber.toString(),
+          url: result.url,
+        });
+      } else if (connectorType === "zoho") {
+        result = await connectorService.syncToZoho(connector, {
+          title: issue.title,
+          description: issue.description,
+          filePath: issue.filePath,
+        });
+        await issueService.updateSyncStatus(issueId, "synced", {
+          platform: "zoho",
+          externalId: result.bugId,
+          url: result.url,
+        });
+      }
+
+      return { success: true, data: result };
+    } catch (error) {
+      await issueService.updateSyncStatus(issueId, "failed");
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Note: Database configuration handlers removed - Supabase config is now via environment variables
+
+  // File access handler
+  ipcMain.handle("file:read-image", async (_event, { filePath }) => {
+    try {
+      if (!fs.existsSync(filePath)) {
+        return { success: false, error: "File not found" };
+      }
+
+      const buffer = fs.readFileSync(filePath);
+      const base64 = buffer.toString("base64");
+      const ext = path.extname(filePath).toLowerCase();
+      const mimeType =
+        ext === ".png"
+          ? "image/png"
+          : ext === ".jpg" || ext === ".jpeg"
+            ? "image/jpeg"
+            : "image/png";
+      const dataUrl = `data:${mimeType};base64,${base64}`;
+
+      return { success: true, data: dataUrl };
+    } catch (error) {
+      console.error("Error reading image:", error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // App control handlers
+  ipcMain.handle("app:quit", () => {
+    isQuitting = true;
+    app.quit();
+  });
+
+  ipcMain.handle("app:show-window", () => {
+    mainWindow?.show();
+  });
 
   ipcMain.handle("app:hide-window", () => {
     mainWindow?.hide();
   });
+
+  // Update handlers
+  ipcMain.handle("update:check", async () => {
+    try {
+      const result = await updaterService.checkForUpdates();
+      return { success: true, data: result };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("update:download", async () => {
+    try {
+      await updaterService.downloadUpdate();
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("update:install", () => {
+    try {
+      updaterService.quitAndInstall();
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("update:get-info", () => {
+    try {
+      const info = updaterService.getUpdateInfo();
+      return { success: true, data: info };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Debug handler to test screen capture directly
+  ipcMain.handle("debug:test-capture", async () => {
+    try {
+      console.log("[Debug] Testing screen capture...");
+      const hasPermission =
+        await captureService.checkScreenRecordingPermission();
+      console.log("[Debug] Permission status:", hasPermission);
+
+      if (hasPermission) {
+        console.log("[Debug] Permission granted, attempting test capture...");
+        const result = await captureService.captureScreenshot({
+          mode: "fullscreen",
+        });
+        console.log(
+          "[Debug] Test capture successful! Buffer size:",
+          result.buffer.length
+        );
+        return {
+          success: true,
+          data: {
+            hasPermission,
+            bufferSize: result.buffer.length,
+            dataUrlLength: result.dataUrl.length,
+          },
+        };
+      } else {
+        console.log("[Debug] No permission detected");
+        return { success: false, error: "No screen recording permission" };
+      }
+    } catch (error) {
+      console.error("[Debug] Test capture failed:", error);
+      return { success: false, error: error.message };
+    }
+  });
 }
 
-// Cleanup on app quit
+// Handle quit events properly
 if (app && app.on) {
-  app.on("before-quit", async () => {
-    // Don't clear the session - we want to persist it across app restarts
-    // Session will only be cleared when user explicitly logs out
-    console.log("[App] Quitting app, session will be preserved for next launch");
+  // Set isQuitting flag before quit begins (handles CMD+Q, dock quit, etc.)
+  app.on("before-quit", () => {
+    console.log("[App] before-quit event - setting isQuitting to true");
+    isQuitting = true;
+  });
+
+  // Handle activate event (macOS) - show window when clicking dock icon
+  app.on("activate", () => {
+    console.log("[App] activate event - showing window");
+    if (mainWindow && !mainWindow.isVisible()) {
+      mainWindow.show();
+    }
   });
 }

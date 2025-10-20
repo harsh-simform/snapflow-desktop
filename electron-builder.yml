@@ -16,6 +16,17 @@ files:
     to: prisma
     filter:
       - schema.prisma
+  - from: .
+    to: .
+    filter:
+      - .env
+
+# Extra resources that should be copied to app.asar.unpacked or Resources
+extraResources:
+  - from: resources/tray-icon.png
+    to: tray-icon.png
+  - from: resources/icon.png
+    to: icon.png
 
 # Include native modules
 asarUnpack:
@@ -28,12 +39,10 @@ mac:
   target:
     - target: dmg
       arch:
-        - x64
-        - arm64
+        - universal
     - target: zip
       arch:
-        - x64
-        - arm64
+        - universal
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: resources/entitlements.mac.plist
@@ -96,8 +105,13 @@ linux:
 extraMetadata:
   main: app/background.js
 
-# Don't publish automatically
-publish: null
+# Auto-update configuration
+publish:
+  provider: github
+  owner: harsh-simform
+  repo: snapflow-desktop
+  private: false
+  releaseType: release
 
 # Compression
 compression: normal

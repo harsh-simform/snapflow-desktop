@@ -5,6 +5,7 @@
 
 import Store from "electron-store";
 import { authService } from "../services/auth";
+import { getSupabase } from "./supabase";
 
 interface User {
   id: string;
@@ -20,6 +21,7 @@ interface SessionData {
   supabaseSession: {
     accessToken: string;
     refreshToken: string;
+    expiresAt: number;
   } | null;
 }
 
@@ -37,6 +39,7 @@ console.log("[Session Store] Path:", sessionStore.path);
 
 class SessionManager {
   private currentUser: User | null = null;
+  private sessionListenerInitialized = false;
 
   /**
    * Initialize session from persistent storage
@@ -45,47 +48,107 @@ class SessionManager {
    */
   async initialize(): Promise<void> {
     console.log("[Session] Initializing session...");
-    const storedUser = sessionStore.get("user");
-    const storedSupabaseSession = sessionStore.get("supabaseSession");
 
-    console.log("[Session] Stored user:", storedUser ? `${storedUser.email} (${storedUser.id})` : "none");
-    console.log("[Session] Stored Supabase session:", storedSupabaseSession ? "exists" : "none");
+    // Setup auth state change listener first
+    this.setupAuthStateListener();
 
-    // If we have a stored Supabase session, restore it
-    if (storedSupabaseSession) {
+    const supabase = getSupabase();
+    if (!supabase) {
+      console.warn("[Session] Supabase not available");
+      return;
+    }
+
+    // Try to get the session from Supabase's storage (which now uses electron-store)
+    const {
+      data: { session },
+      error,
+    } = await supabase.auth.getSession();
+
+    if (error) {
+      console.error("[Session] Error getting session:", error);
+      await this.clearUser();
+      return;
+    }
+
+    if (session) {
       try {
-        console.log("[Session] Restoring Supabase session with tokens...");
-        const session = await authService.setSession(
-          storedSupabaseSession.accessToken,
-          storedSupabaseSession.refreshToken
-        );
+        console.log("[Session] Found existing Supabase session, restoring...");
 
-        console.log("[Session] Session restored, getting current user...");
-        // Get the current user from Supabase
+        // Get the current user
         const user = await authService.getCurrentUser();
         if (user) {
           this.currentUser = user;
-          // Update stored user with fresh data
+          // Store user data for quick access
           sessionStore.set("user", user);
+          sessionStore.set("userId", user.id);
+          // Also store session tokens for backup
+          sessionStore.set("supabaseSession", {
+            accessToken: session.access_token,
+            refreshToken: session.refresh_token,
+            expiresAt: session.expires_at || 0,
+          });
           console.log("✓ Session restored successfully for:", user.email);
           return;
         } else {
-          console.warn("[Session] getCurrentUser returned null after setSession");
+          console.warn("[Session] Session exists but no user found");
+          await this.clearUser();
         }
       } catch (error) {
-        console.error("[Session] Failed to restore Supabase session:", error);
-        // Clear invalid session
+        console.error("[Session] Failed to restore session:", error);
         await this.clearUser();
       }
+    } else {
+      console.log("[Session] No session found");
+      // Clear any stale data
+      sessionStore.set("user", null);
+      sessionStore.set("userId", null);
+      sessionStore.set("supabaseSession", null);
+    }
+  }
+
+  /**
+   * Setup Supabase auth state change listener
+   * This monitors token refresh and session changes
+   */
+  private setupAuthStateListener(): void {
+    if (this.sessionListenerInitialized) {
+      return;
     }
 
-    // Fallback: if stored user exists but no Supabase session, clear it
-    if (storedUser && !storedSupabaseSession) {
-      console.log("[Session] User exists but no Supabase tokens - clearing");
-      await this.clearUser();
+    const supabase = getSupabase();
+    if (!supabase) {
+      console.warn(
+        "[Session] Cannot setup auth listener - Supabase not initialized"
+      );
+      return;
     }
 
-    console.log("[Session] No valid session to restore");
+    supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log("[Session] Auth state changed:", event);
+
+      if (event === "TOKEN_REFRESHED" && session) {
+        console.log("[Session] Token refreshed, updating stored session");
+        sessionStore.set("supabaseSession", {
+          accessToken: session.access_token,
+          refreshToken: session.refresh_token,
+          expiresAt: session.expires_at || 0,
+        });
+      } else if (event === "SIGNED_OUT") {
+        console.log("[Session] User signed out via auth state change");
+        await this.clearUser();
+      } else if (event === "SIGNED_IN" && session) {
+        console.log("[Session] User signed in via auth state change");
+        // Update session tokens
+        sessionStore.set("supabaseSession", {
+          accessToken: session.access_token,
+          refreshToken: session.refresh_token,
+          expiresAt: session.expires_at || 0,
+        });
+      }
+    });
+
+    this.sessionListenerInitialized = true;
+    console.log("[Session] Auth state listener initialized");
   }
 
   /**
@@ -94,6 +157,9 @@ class SessionManager {
   async setUser(user: User): Promise<void> {
     console.log("[Session] Setting user:", user.email);
     this.currentUser = user;
+
+    // Setup auth state listener if not already done
+    this.setupAuthStateListener();
 
     // Get current Supabase session
     const session = await authService.getSession();
@@ -106,8 +172,13 @@ class SessionManager {
       sessionStore.set("supabaseSession", {
         accessToken: session.access_token,
         refreshToken: session.refresh_token,
+        expiresAt: session.expires_at || 0,
       });
       console.log("✓ Session persisted for:", user.email);
+      console.log(
+        "[Session] Token expires at:",
+        new Date((session.expires_at || 0) * 1000).toLocaleString()
+      );
     } else {
       console.warn("[Session] No Supabase session found - storing user only");
       // Just store user if no session (shouldn't happen normally)
@@ -149,12 +220,15 @@ class SessionManager {
 
   /**
    * Refresh Supabase session tokens
+   * Note: This is automatically handled by Supabase's autoRefreshToken
+   * and our auth state change listener. This method is kept for manual refresh if needed.
    */
   async refreshSession(): Promise<void> {
     const storedSession = sessionStore.get("supabaseSession");
 
     if (storedSession) {
       try {
+        console.log("[Session] Manually refreshing session...");
         const session = await authService.setSession(
           storedSession.accessToken,
           storedSession.refreshToken
@@ -165,13 +239,34 @@ class SessionManager {
           sessionStore.set("supabaseSession", {
             accessToken: session.access_token,
             refreshToken: session.refresh_token,
+            expiresAt: session.expires_at || 0,
           });
+          console.log("[Session] Session manually refreshed successfully");
         }
       } catch (error) {
-        console.error("Failed to refresh session:", error);
+        console.error("[Session] Failed to refresh session:", error);
         await this.clearUser();
       }
     }
+  }
+
+  /**
+   * Check if the current session is valid and not expired
+   */
+  isSessionValid(): boolean {
+    const storedSession = sessionStore.get("supabaseSession");
+    if (!storedSession || !this.currentUser) {
+      return false;
+    }
+
+    // Check if token has expired
+    const now = Date.now() / 1000; // Convert to seconds
+    if (storedSession.expiresAt && storedSession.expiresAt < now) {
+      console.log("[Session] Token has expired");
+      return false;
+    }
+
+    return true;
   }
 }
 
