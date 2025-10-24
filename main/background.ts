@@ -22,6 +22,7 @@ const {
   protocol,
   dialog,
   shell,
+  screen,
 } = electron;
 
 // Determine if we're in production
@@ -175,8 +176,20 @@ function createSystemTray() {
   trayIcon.setTemplateImage(true); // Makes it adapt to light/dark themes on macOS
 
   tray = new Tray(trayIcon);
+  updateTrayMenu();
 
-  const contextMenu = Menu.buildFromTemplate([
+  tray.setToolTip("SnapFlow");
+}
+
+function updateTrayMenu() {
+  if (!tray) return;
+
+  // Get available displays
+  const displays = captureService.getAvailableDisplays();
+  const hasMultipleDisplays = displays.length > 1;
+
+  // Build capture menu items
+  const captureMenuItems: electron.MenuItemConstructorOptions[] = [
     {
       label: "Capture Full Screen",
       click: () => {
@@ -189,12 +202,47 @@ function createSystemTray() {
         handleScreenshotCapture("region");
       },
     },
+  ];
+
+  // Add multi-screen options if multiple displays are available
+  if (hasMultipleDisplays) {
+    captureMenuItems.push({ type: "separator" });
+    captureMenuItems.push({
+      label: "Capture All Screens",
+      click: () => {
+        handleScreenshotCapture("all-screens");
+      },
+    });
+
+    // Add individual screen capture options
+    const screenSubmenu = displays.map((display) => ({
+      label: display.label,
+      click: () => {
+        handleScreenshotCapture("specific-screen", display.id.toString());
+      },
+    }));
+
+    captureMenuItems.push({
+      label: "Capture Specific Screen",
+      submenu: screenSubmenu,
+    });
+  }
+
+  const contextMenu = Menu.buildFromTemplate([
+    ...captureMenuItems,
     { type: "separator" },
     {
       label: "View My Snaps",
       click: () => {
         mainWindow?.show();
         mainWindow?.webContents.send("navigate", "/home");
+      },
+    },
+    { type: "separator" },
+    {
+      label: "Check for Updates",
+      click: async () => {
+        await handleCheckForUpdates();
       },
     },
     { type: "separator" },
@@ -207,7 +255,6 @@ function createSystemTray() {
     },
   ]);
 
-  tray.setToolTip("SnapFlow");
   tray.setContextMenu(contextMenu);
 }
 
@@ -367,7 +414,8 @@ async function createAreaCaptureOverlay() {
 }
 
 async function handleScreenshotCapture(
-  mode: "fullscreen" | "window" | "region"
+  mode: "fullscreen" | "window" | "region" | "all-screens" | "specific-screen",
+  screenId?: string
 ) {
   try {
     // Check permission first to avoid getting stuck in a loop
@@ -426,8 +474,8 @@ async function handleScreenshotCapture(
       return;
     }
 
-    // For fullscreen, capture immediately
-    console.log("[Tray] Starting fullscreen capture...");
+    // For fullscreen, all-screens, or specific-screen, capture immediately
+    console.log("[Tray] Starting", mode, "capture...");
 
     // Keep app in dock even when hiding main window
     if (process.platform === "darwin") {
@@ -438,7 +486,27 @@ async function handleScreenshotCapture(
     await new Promise((resolve) => setTimeout(resolve, 300));
 
     console.log("[Tray] Capturing screenshot...");
-    const { dataUrl } = await captureService.captureScreenshot({ mode });
+    const captureOptions: {
+      mode:
+        | "fullscreen"
+        | "window"
+        | "region"
+        | "all-screens"
+        | "specific-screen";
+      screenId?: string;
+    } = {
+      mode: mode as
+        | "fullscreen"
+        | "window"
+        | "region"
+        | "all-screens"
+        | "specific-screen",
+    };
+    if (mode === "specific-screen" && screenId) {
+      captureOptions.screenId = screenId;
+    }
+
+    const { dataUrl } = await captureService.captureScreenshot(captureOptions);
     console.log(
       "[Tray] Screenshot captured, dataUrl length:",
       dataUrl?.length || 0
@@ -460,6 +528,54 @@ async function handleScreenshotCapture(
     console.log("[Tray] Navigation complete");
   } catch (error) {
     console.error("[Tray] Failed to capture screenshot:", error);
+  }
+}
+
+async function handleCheckForUpdates() {
+  try {
+    console.log("[Tray] Checking for updates...");
+
+    // Show a loading dialog while checking
+    const checkingDialog = dialog.showMessageBox(mainWindow!, {
+      type: "info",
+      title: "Checking for Updates",
+      message: "Checking for updates...",
+      detail: "Please wait while we check for the latest version.",
+      buttons: [],
+    });
+
+    // Check for updates
+    const result = await updaterService.checkForUpdates();
+
+    // Close the loading dialog
+    checkingDialog.then((_dialogResult) => {
+      // Dialog will be closed automatically when we show the next one
+    });
+
+    if (result && result.updateInfo) {
+      // Update is available - the updater service will handle the download and prompt
+      console.log("[Tray] Update available:", result.updateInfo.version);
+    } else {
+      // No update available - show a message to the user
+      await dialog.showMessageBox(mainWindow!, {
+        type: "info",
+        title: "No Updates Available",
+        message: "You're running the latest version!",
+        detail: `SnapFlow is up to date (version ${app.getVersion()}).`,
+        buttons: ["OK"],
+      });
+    }
+  } catch (error) {
+    console.error("[Tray] Failed to check for updates:", error);
+
+    // Show error dialog
+    await dialog.showMessageBox(mainWindow!, {
+      type: "error",
+      title: "Update Check Failed",
+      message: "Failed to check for updates",
+      detail: "Please check your internet connection and try again later.",
+      buttons: ["OK"],
+    });
   }
 }
 
@@ -540,6 +656,22 @@ if (app && app.requestSingleInstanceLock) {
 
       // Create system tray
       createSystemTray();
+
+      // Listen for display changes to update tray menu
+      screen.on("display-added", () => {
+        console.log("[Display] Display added, updating tray menu");
+        updateTrayMenu();
+      });
+
+      screen.on("display-removed", () => {
+        console.log("[Display] Display removed, updating tray menu");
+        updateTrayMenu();
+      });
+
+      screen.on("display-metrics-changed", () => {
+        console.log("[Display] Display metrics changed, updating tray menu");
+        updateTrayMenu();
+      });
 
       // Initialize auto-updater (only in production)
       if (isProd && mainWindow) {
@@ -768,6 +900,39 @@ function setupIPCHandlers() {
     }
   });
 
+  ipcMain.handle("capture:get-displays", async () => {
+    try {
+      const displays = captureService.getAvailableDisplays();
+      return { success: true, data: displays };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("capture:all-screens", async () => {
+    try {
+      const result = await captureService.captureAllScreens();
+      return {
+        success: true,
+        data: { buffer: Array.from(result.buffer), dataUrl: result.dataUrl },
+      };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("capture:specific-screen", async (_event, { displayId }) => {
+    try {
+      const result = await captureService.captureSpecificScreen(displayId);
+      return {
+        success: true,
+        data: { buffer: Array.from(result.buffer), dataUrl: result.dataUrl },
+      };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
   // Handle window selection from overlay
   ipcMain.handle("capture:select-window", async (_event, { windowId }) => {
     try {
@@ -901,44 +1066,31 @@ function setupIPCHandlers() {
   });
 
   // Sync handler
-  ipcMain.handle("sync:issue", async (_event, { issueId, connectorType }) => {
+  ipcMain.handle("sync:issue", async (_event, { issueId, connectorId }) => {
     try {
       const issue = issueService.getIssueById(issueId);
       if (!issue) {
         throw new Error("Issue not found");
       }
 
-      const connector = connectorService.getConnectorByType(connectorType);
+      const connector = connectorService.getConnectorById(connectorId);
       if (!connector || !connector.enabled) {
-        throw new Error(`${connectorType} connector not configured`);
+        throw new Error("GitHub connector not found or disabled");
       }
 
       await issueService.updateSyncStatus(issueId, "syncing");
 
-      let result: { issueUrl: string } | null = null;
-      if (connectorType === "github") {
-        result = await connectorService.syncToGitHub(connector, {
-          title: issue.title,
-          description: issue.description,
-          filePath: issue.filePath,
-        });
-        await issueService.updateSyncStatus(issueId, "synced", {
-          platform: "github",
-          externalId: result.issueNumber.toString(),
-          url: result.url,
-        });
-      } else if (connectorType === "zoho") {
-        result = await connectorService.syncToZoho(connector, {
-          title: issue.title,
-          description: issue.description,
-          filePath: issue.filePath,
-        });
-        await issueService.updateSyncStatus(issueId, "synced", {
-          platform: "zoho",
-          externalId: result.bugId,
-          url: result.url,
-        });
-      }
+      const result = await connectorService.syncToGitHub(connector, {
+        title: issue.title,
+        description: issue.description,
+        filePath: issue.filePath,
+      });
+
+      await issueService.updateSyncStatus(issueId, "synced", {
+        platform: "github",
+        externalId: result.issueNumber.toString(),
+        url: result.url,
+      });
 
       return { success: true, data: result };
     } catch (error) {
@@ -946,6 +1098,23 @@ function setupIPCHandlers() {
       return { success: false, error: error.message };
     }
   });
+
+  // Validate GitHub connector
+  ipcMain.handle(
+    "connector:validate-github",
+    async (_event, { accessToken, owner, repo }) => {
+      try {
+        const isValid = await connectorService.validateGitHubConnector(
+          accessToken,
+          owner,
+          repo
+        );
+        return { success: true, data: { isValid } };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    }
+  );
 
   // Note: Database configuration handlers removed - Supabase config is now via environment variables
 
@@ -994,6 +1163,37 @@ function setupIPCHandlers() {
       const result = await updaterService.checkForUpdates();
       return { success: true, data: result };
     } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("update:check-manual", async () => {
+    try {
+      console.log("[IPC] Manual update check requested");
+      const result = await updaterService.checkForUpdates();
+
+      if (result && result.updateInfo) {
+        console.log("[IPC] Update available:", result.updateInfo.version);
+        return {
+          success: true,
+          data: {
+            updateAvailable: true,
+            version: result.updateInfo.version,
+            releaseDate: result.updateInfo.releaseDate,
+          },
+        };
+      } else {
+        console.log("[IPC] No update available");
+        return {
+          success: true,
+          data: {
+            updateAvailable: false,
+            currentVersion: app.getVersion(),
+          },
+        };
+      }
+    } catch (error) {
+      console.error("[IPC] Manual update check failed:", error);
       return { success: false, error: error.message };
     }
   });

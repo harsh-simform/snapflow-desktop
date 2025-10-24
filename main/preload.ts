@@ -60,6 +60,10 @@ const api = {
     width: number;
     height: number;
   }) => ipcRenderer.invoke("capture:selected-region", { bounds }),
+  captureAllScreens: () => ipcRenderer.invoke("capture:all-screens"),
+  captureSpecificScreen: (displayId: number) =>
+    ipcRenderer.invoke("capture:specific-screen", { displayId }),
+  getAvailableDisplays: () => ipcRenderer.invoke("capture:get-displays"),
 
   // Legacy capture methods
   captureScreenshot: (options: {
@@ -86,8 +90,14 @@ const api = {
     ipcRenderer.invoke("connector:delete", { id }),
 
   // Sync method
-  syncIssue: (issueId: string, connectorType: "github" | "zoho") =>
-    ipcRenderer.invoke("sync:issue", { issueId, connectorType }),
+  syncIssue: (issueId: string, connectorId: string) =>
+    ipcRenderer.invoke("sync:issue", { issueId, connectorId }),
+  validateGitHubConnector: (accessToken: string, owner: string, repo: string) =>
+    ipcRenderer.invoke("connector:validate-github", {
+      accessToken,
+      owner,
+      repo,
+    }),
 
   // Database methods
   getDatabaseConfig: () => ipcRenderer.invoke("db:get-config"),
@@ -106,6 +116,7 @@ const api = {
 
   // Update methods
   checkForUpdates: () => ipcRenderer.invoke("update:check"),
+  checkForUpdatesManual: () => ipcRenderer.invoke("update:check-manual"),
   downloadUpdate: () => ipcRenderer.invoke("update:download"),
   installUpdate: () => ipcRenderer.invoke("update:install"),
   getUpdateInfo: () => ipcRenderer.invoke("update:get-info"),
