@@ -37,6 +37,13 @@ export default [
         navigator: 'readonly',
         console: 'readonly',
         alert: 'readonly',
+        confirm: 'readonly',
+        fetch: 'readonly',
+        Image: 'readonly',
+        FormData: 'readonly',
+        Blob: 'readonly',
+        File: 'readonly',
+        FileReader: 'readonly',
         // DOM Types
         HTMLElement: 'readonly',
         HTMLButtonElement: 'readonly',
