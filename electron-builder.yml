@@ -53,7 +53,7 @@ mac:
     NSMicrophoneUsageDescription: "SnapFlow needs microphone access to record audio with your screen recordings."
 
 dmg:
-  title: ${productName} ${version}
+  title: SnapFlow 1.0.0
   icon: resources/icon.icns
   contents:
     - x: 130
@@ -78,13 +78,15 @@ win:
         - x64
   publisherName: SnapFlow Team
   verifyUpdateCodeSignature: false
+  fileVersion: 1.0.0.0
+  productVersion: 1.0.0.0
 
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: ${productName}
+  shortcutName: SnapFlow
   perMachine: false
   deleteAppDataOnUninstall: false
 
@@ -124,6 +126,4 @@ compression: normal
 electronLanguages:
   - en
   - en-US
-
 # Environment
-buildVersion: ${version}
