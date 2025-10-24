@@ -1,57 +1,75 @@
-import React, { useState, KeyboardEvent } from 'react'
-import clsx from 'clsx'
+import React, { useState, KeyboardEvent } from "react";
+import clsx from "clsx";
 
 export interface ChipsInputProps {
-  value: string[]
-  onChange: (value: string[]) => void
-  placeholder?: string
-  className?: string
-  disabled?: boolean
+  value: string[];
+  onChange: (value: string[]) => void;
+  placeholder?: string;
+  className?: string;
+  disabled?: boolean;
 }
 
 export const ChipsInput = React.forwardRef<HTMLDivElement, ChipsInputProps>(
-  ({ value = [], onChange, placeholder = "Add tag...", className, disabled }, ref) => {
-    const [inputValue, setInputValue] = useState('')
+  (
+    { value = [], onChange, placeholder = "Add tag...", className, disabled },
+    ref
+  ) => {
+    const [inputValue, setInputValue] = useState("");
 
     const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === 'Enter' && inputValue.trim()) {
-        e.preventDefault()
-        const newTag = inputValue.trim()
-        if (!value.includes(newTag)) {
-          onChange([...value, newTag])
+      if ((e.key === "Enter" || e.key === ",") && inputValue.trim()) {
+        e.preventDefault();
+        const newTag = inputValue.trim().replace(/,$/, ""); // Remove trailing comma
+        if (newTag && !value.includes(newTag)) {
+          onChange([...value, newTag]);
         }
-        setInputValue('')
-      } else if (e.key === 'Backspace' && !inputValue && value.length > 0) {
-        e.preventDefault()
-        onChange(value.slice(0, -1))
+        setInputValue("");
+      } else if (e.key === "Backspace" && !inputValue && value.length > 0) {
+        e.preventDefault();
+        onChange(value.slice(0, -1));
+      } else if (e.key === "Escape" && inputValue) {
+        e.preventDefault();
+        setInputValue("");
       }
-    }
+    };
 
     const removeTag = (tagToRemove: string) => {
-      onChange(value.filter((tag) => tag !== tagToRemove))
-    }
+      onChange(value.filter((tag) => tag !== tagToRemove));
+    };
+
+    const handleBlur = () => {
+      // Add tag on blur if there's input
+      if (inputValue.trim()) {
+        const newTag = inputValue.trim();
+        if (!value.includes(newTag)) {
+          onChange([...value, newTag]);
+        }
+        setInputValue("");
+      }
+    };
 
     return (
       <div
         ref={ref}
         className={clsx(
-          'flex flex-wrap gap-2 items-center min-h-[42px] rounded-lg border border-gray-800 bg-gray-900 px-3 py-2 text-sm transition-colors',
-          'focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500',
-          disabled && 'opacity-50 cursor-not-allowed',
+          "flex flex-wrap gap-2 items-center min-h-[42px] rounded-lg border bg-gray-900 px-3 py-2 text-sm transition-all duration-200",
+          "border-gray-800 focus-within:border-blue-500",
+          disabled && "opacity-50 cursor-not-allowed",
           className
         )}
       >
         {value.map((tag) => (
           <div
             key={tag}
-            className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-600/20 text-blue-300 rounded-md text-xs font-medium border border-blue-600/30"
+            className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-600/20 text-blue-300 rounded-md text-xs font-medium border border-blue-600/30 animate-in fade-in duration-200"
           >
             <span>{tag}</span>
             {!disabled && (
               <button
                 type="button"
                 onClick={() => removeTag(tag)}
-                className="hover:text-blue-100 focus:outline-none transition-colors"
+                className="hover:text-blue-100 focus:outline-none transition-colors hover:scale-110"
+                aria-label={`Remove ${tag}`}
               >
                 <svg
                   className="w-3.5 h-3.5"
@@ -75,16 +93,18 @@ export const ChipsInput = React.forwardRef<HTMLDivElement, ChipsInputProps>(
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={value.length === 0 ? placeholder : ''}
+          onBlur={handleBlur}
+          placeholder={value.length === 0 ? placeholder : ""}
           disabled={disabled}
           className={clsx(
-            'flex-1 min-w-[120px] bg-transparent text-gray-300 placeholder:text-gray-500 focus:outline-none',
-            disabled && 'cursor-not-allowed'
+            "flex-1 min-w-[120px] bg-transparent text-gray-300 placeholder:text-gray-500 focus:outline-none",
+            disabled && "cursor-not-allowed"
           )}
+          aria-label="Tag input"
         />
       </div>
-    )
+    );
   }
-)
+);
 
-ChipsInput.displayName = 'ChipsInput'
+ChipsInput.displayName = "ChipsInput";

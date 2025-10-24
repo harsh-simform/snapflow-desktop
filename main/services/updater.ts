@@ -2,16 +2,24 @@ import { autoUpdater } from "electron-updater";
 import { BrowserWindow, dialog } from "electron";
 import log from "electron-log";
 
-// Configure logging
-autoUpdater.logger = log;
-(autoUpdater.logger as typeof log).transports.file.level = "info";
-
 export class UpdaterService {
   private mainWindow: BrowserWindow | null = null;
   private updateDownloaded = false;
+  private isInitialized = false;
 
   constructor() {
+    // Don't initialize in constructor - wait for explicit init() call
+  }
+
+  init() {
+    if (this.isInitialized) return;
+
+    // Configure logging
+    autoUpdater.logger = log;
+    (autoUpdater.logger as typeof log).transports.file.level = "info";
+
     this.setupAutoUpdater();
+    this.isInitialized = true;
   }
 
   setMainWindow(window: BrowserWindow) {

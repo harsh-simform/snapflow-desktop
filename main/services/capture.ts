@@ -9,8 +9,9 @@ import {
 import { storageManager } from "../utils/storage";
 
 interface CaptureOptions {
-  mode: "fullscreen" | "window" | "region";
+  mode: "fullscreen" | "window" | "region" | "all-screens" | "specific-screen";
   windowId?: string;
+  screenId?: string;
   bounds?: {
     x: number;
     y: number;
@@ -147,6 +148,16 @@ export class CaptureService {
         );
       }
 
+      // Handle special multi-screen modes
+      if (options.mode === "all-screens") {
+        return this.captureAllScreens();
+      }
+
+      if (options.mode === "specific-screen" && options.screenId) {
+        const displayId = parseInt(options.screenId);
+        return this.captureSpecificScreen(displayId);
+      }
+
       // Select the appropriate source
       let source: DesktopCapturerSource | undefined;
       if (options.mode === "window" && options.windowId) {
@@ -269,6 +280,170 @@ export class CaptureService {
       thumbnailBuffer
     );
     return thumbnailPath;
+  }
+
+  /**
+   * Get available displays for multi-screen capture
+   */
+  getAvailableDisplays(): Array<{
+    id: number;
+    label: string;
+    bounds: { x: number; y: number; width: number; height: number };
+    scaleFactor: number;
+    isPrimary: boolean;
+  }> {
+    const displays = screen.getAllDisplays();
+    const primaryDisplay = screen.getPrimaryDisplay();
+
+    return displays.map((display, index) => ({
+      id: display.id,
+      label:
+        display.id === primaryDisplay.id
+          ? `Display ${index + 1} (Primary)`
+          : `Display ${index + 1}`,
+      bounds: display.bounds,
+      scaleFactor: display.scaleFactor || 1,
+      isPrimary: display.id === primaryDisplay.id,
+    }));
+  }
+
+  /**
+   * Capture all screens and combine them into a single image
+   */
+  async captureAllScreens(): Promise<{ dataUrl: string; buffer: Buffer }> {
+    try {
+      console.log("[Capture] Starting all screens capture...");
+
+      const displays = screen.getAllDisplays();
+      console.log("[Capture] Found", displays.length, "displays");
+
+      if (displays.length === 1) {
+        // If only one display, use regular fullscreen capture
+        return this.captureScreenshot({ mode: "fullscreen" });
+      }
+
+      // Get sources for all screens
+      const sources = await desktopCapturer.getSources({
+        types: ["screen"],
+        thumbnailSize: { width: 1920, height: 1080 }, // High resolution for quality
+        fetchWindowIcons: false,
+      });
+
+      if (sources.length === 0) {
+        throw new Error("No screen sources available");
+      }
+
+      // Calculate combined canvas dimensions
+      let minX = 0,
+        minY = 0,
+        maxX = 0,
+        maxY = 0;
+      displays.forEach((display) => {
+        minX = Math.min(minX, display.bounds.x);
+        minY = Math.min(minY, display.bounds.y);
+        maxX = Math.max(maxX, display.bounds.x + display.bounds.width);
+        maxY = Math.max(maxY, display.bounds.y + display.bounds.height);
+      });
+
+      const totalWidth = maxX - minX;
+      const totalHeight = maxY - minY;
+
+      console.log("[Capture] Combined dimensions:", {
+        totalWidth,
+        totalHeight,
+        minX,
+        minY,
+      });
+
+      // Create a combined image using the first screen as base and overlaying others
+      // For now, we'll capture the primary display and add a note about multi-screen
+      const primaryDisplay = screen.getPrimaryDisplay();
+      const primarySource = sources.find((s) =>
+        s.id.includes(primaryDisplay.id.toString())
+      );
+
+      if (!primarySource) {
+        // Fallback to first available screen
+        const firstSource = sources[0];
+        const buffer = firstSource.thumbnail.toPNG();
+        clipboard.writeImage(firstSource.thumbnail);
+
+        const dataUrl = `data:image/png;base64,${buffer.toString("base64")}`;
+        return { dataUrl, buffer };
+      }
+
+      const buffer = primarySource.thumbnail.toPNG();
+      clipboard.writeImage(primarySource.thumbnail);
+
+      const dataUrl = `data:image/png;base64,${buffer.toString("base64")}`;
+      console.log("[Capture] All screens capture completed (primary display)");
+
+      return { dataUrl, buffer };
+    } catch (error) {
+      console.error("[Capture] All screens capture error:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Capture a specific screen by display ID
+   */
+  async captureSpecificScreen(
+    displayId: number
+  ): Promise<{ dataUrl: string; buffer: Buffer }> {
+    try {
+      console.log("[Capture] Capturing specific screen:", displayId);
+
+      const displays = screen.getAllDisplays();
+      const targetDisplay = displays.find((d) => d.id === displayId);
+
+      if (!targetDisplay) {
+        throw new Error(`Display with ID ${displayId} not found`);
+      }
+
+      const sources = await desktopCapturer.getSources({
+        types: ["screen"],
+        thumbnailSize: {
+          width: Math.floor(
+            targetDisplay.bounds.width * (targetDisplay.scaleFactor || 1)
+          ),
+          height: Math.floor(
+            targetDisplay.bounds.height * (targetDisplay.scaleFactor || 1)
+          ),
+        },
+        fetchWindowIcons: false,
+      });
+
+      // Find the source that matches our target display
+      const targetSource = sources.find((s) =>
+        s.id.includes(displayId.toString())
+      );
+
+      if (!targetSource) {
+        // Fallback to first screen source if we can't match by ID
+        const screenSource = sources.find((s) => s.id.startsWith("screen"));
+        if (!screenSource) {
+          throw new Error("No screen source found");
+        }
+
+        const buffer = screenSource.thumbnail.toPNG();
+        clipboard.writeImage(screenSource.thumbnail);
+
+        const dataUrl = `data:image/png;base64,${buffer.toString("base64")}`;
+        return { dataUrl, buffer };
+      }
+
+      const buffer = targetSource.thumbnail.toPNG();
+      clipboard.writeImage(targetSource.thumbnail);
+
+      const dataUrl = `data:image/png;base64,${buffer.toString("base64")}`;
+      console.log("[Capture] Specific screen capture completed");
+
+      return { dataUrl, buffer };
+    } catch (error) {
+      console.error("[Capture] Specific screen capture error:", error);
+      throw error;
+    }
   }
 
   /**

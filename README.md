@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  Capture, annotate, organize, and sync your screenshots to GitHub Issues or Zoho Projects
+  Capture, annotate, organize, and sync your screenshots to GitHub Issues and the cloud
 </p>
 
 ---
@@ -28,7 +28,9 @@
 
 ## ✨ Features
 
-### Screenshot Capture
+> **Legend**: ✅ = Fully implemented | 🚧 = In development | 📋 = Planned
+
+### Screenshot Capture (✅)
 
 - 📸 **Full Screen Capture** - Capture entire display with multi-monitor support
 - 🪟 **Window Capture** - Select and capture individual application windows
@@ -37,7 +39,7 @@
 - 🖥️ **High-DPI Support** - Perfect pixel-accurate captures on Retina displays
 - 🔐 **Permission Management** - Checks and guides macOS Screen Recording permissions
 
-### Image Annotation
+### Image Annotation (✅)
 
 - ✏️ **Freehand Drawing** - Pen tool with customizable colors and stroke width
 - 🔷 **Shape Tools** - Rectangles, circles with fill and stroke options
@@ -47,7 +49,7 @@
 - ↩️ **Undo/Redo** - Complete action history management
 - 🖱️ **Selection & Transform** - Select, move, and resize drawn elements
 
-### Issue Tracking
+### Issue Tracking (✅)
 
 - 📋 **Create Issues** - Save captures as issues with title, description, and tags
 - 🏷️ **Tag Management** - Organize issues with custom tags
@@ -56,15 +58,20 @@
 - 🖼️ **Preview Mode** - Full-resolution image preview with details sidebar
 - 💾 **Local Storage** - Organized file structure: `~/SnapFlow/Captures/YYYY/MM/DD/issueId/`
 
-### Platform Integrations
+### Platform Integrations (✅)
 
 - 🐙 **GitHub Integration** - Create GitHub issues with embedded screenshots
-- 🔄 **Zoho Projects** - Create Zoho bugs with screenshot attachments
-- 📊 **Sync Status Tracking** - Track sync status per issue (local/syncing/synced/failed)
+  - Upload screenshots directly to repository
+  - Automatic issue creation with description and labels
+  - Support for up to 5 repository connectors
+  - Connector validation and error handling
+- ☁️ **Cloud Sync** - Sync issues and screenshots to Supabase Storage
+  - Automatic file and thumbnail uploads
+  - Sync history tracking
+  - Per-issue sync status (local/syncing/synced/failed)
 - 🔗 **External Links** - Store and access issue URLs on external platforms
-- 🌐 **Multi-Platform Sync** - Sync single issue to multiple platforms
 
-### Security & Authentication
+### Security & Authentication (✅)
 
 - 🔒 **User Authentication** - Email-based signup and login via Supabase Auth
 - 🛡️ **Secure Session Management** - JWT-based authentication with automatic token refresh
@@ -72,7 +79,7 @@
 - 🗄️ **Supabase Backend** - Secure cloud database with real-time capabilities
 - 🔐 **Context Isolation** - Electron security best practices with IPC bridge
 
-### User Experience
+### User Experience (✅)
 
 - 🎨 **Dark Mode UI** - Beautiful dark theme interface with Radix UI components
 - ⚡ **System Tray** - Quick access to capture from menu bar
@@ -81,6 +88,15 @@
 - 💻 **Cross-Platform** - macOS support (Windows/Linux coming soon)
 - 📱 **Responsive Design** - Adaptive layout for different screen sizes
 - 📄 **Pagination** - Efficient browsing with customizable items per page (6, 12, 24, 48)
+
+### Planned Features (📋)
+
+- 🎥 **Screen Recording** - Record screen activity with audio (infrastructure in place)
+- 🔄 **Additional Platform Integrations** - Jira, Linear, Asana, etc.
+- 📤 **Export Options** - Export issues to PDF, ZIP archive
+- 🌐 **Public Sharing** - Generate shareable links for issues
+- 🔍 **Advanced Search** - Full-text search across descriptions
+- 🏷️ **Smart Tags** - Auto-suggest tags based on content
 
 ---
 
@@ -105,10 +121,13 @@
 - **Runtime**: [Electron](https://www.electronjs.org/) 34.0.0
 - **Framework**: [Nextron](https://github.com/saltyshiomix/nextron) 9.5.0 (Next.js + Electron)
 - **Database**: [Supabase](https://supabase.com/) (PostgreSQL + Auth + Storage)
-- **Image Processing**: [Sharp](https://sharp.pixelplumbing.com/) 0.33.2 (thumbnail generation)
 - **Capture**: Native Electron `desktopCapturer` API with `nativeImage.crop()`
-- **Storage**: Local file system with organized directory structure
-- **HTTP Client**: [axios](https://axios-http.com/) 1.6.7
+- **Storage**:
+  - Local: Electron Store for metadata + file system for captures
+  - Cloud: Supabase Storage (`snapflow-public-bucket`)
+- **HTTP Client**: [axios](https://axios-http.com/) 1.6.7 (GitHub API integration)
+- **Logging**: [electron-log](https://www.npmjs.com/package/electron-log) 5.4.3
+- **Auto-Updates**: [electron-updater](https://www.electron.build/auto-update) 6.6.2
 
 ### Development Tools
 
@@ -154,13 +173,29 @@ This will install all npm dependencies and prepare the app for development.
    - Project URL
    - anon/public key
 
-3. Create a `.env` file in the project root:
+3. Run the SQL schema to create database tables:
+   - Go to **SQL Editor** in your Supabase Dashboard
+   - Open [supabase-schema.sql](supabase-schema.sql) and copy the entire contents
+   - Paste and run the SQL in the editor
+   - This creates the `issues` and `sync_history` tables with RLS policies
+
+4. Create a storage bucket for file uploads:
+   - Go to **Storage** section in Supabase Dashboard
+   - Click **New bucket**
+   - Configure the bucket:
+     - **Name**: `snapflow-public-bucket`
+     - **Public**: Yes (checked)
+     - **File size limit**: 52428800 (50MB)
+     - **Allowed MIME types**: `image/png`, `image/jpeg`, `image/jpg`, `image/gif`, `image/webp`, `video/mp4`, `video/webm`, `video/quicktime`
+   - Click **Create bucket**
+
+5. Create a `.env` file in the project root:
 
    ```bash
    cp .env.example .env
    ```
 
-4. Update `.env` with your Supabase credentials:
+6. Update `.env` with your Supabase credentials:
 
    ```env
    SUPABASE_URL=https://your-project.supabase.co
@@ -168,7 +203,7 @@ This will install all npm dependencies and prepare the app for development.
    NODE_ENV=development
    ```
 
-5. **(Optional)** For development, disable email confirmation in Supabase:
+7. **(Optional)** For development, disable email confirmation in Supabase:
    - Go to **Authentication** → **Providers** → **Email**
    - Toggle "Enable Email Confirmations" to **OFF**
 
@@ -211,38 +246,43 @@ SnapFlow uses Supabase for:
 
 - **Authentication**: Secure user signup/login with email/password
 - **Session Management**: Automatic token refresh and persistence
-- **User Profiles**: Store user metadata (name, email)
+- **Database**: Store issues and sync history with Row-Level Security
+- **Storage**: Cloud file uploads with `snapflow-public-bucket`
 
-For detailed setup instructions, see [SUPABASE_SETUP.md](SUPABASE_SETUP.md)
+**Required Setup:**
+
+1. Create tables by running [supabase-schema.sql](supabase-schema.sql) in SQL Editor
+2. Create storage bucket `snapflow-public-bucket` (see setup instructions above)
+3. Storage RLS policies are included in the schema file
 
 ### Platform Connectors
 
 #### GitHub Integration
 
-1. Go to **Settings** → **Connectors**
-2. Click **Add Connector** → **GitHub**
+1. Go to **Settings** → **Connectors** tab
+2. Click **Add Connector**
 3. Enter:
    - **Access Token**: Personal access token with `repo` scope
    - **Owner**: Repository owner username
    - **Repository**: Repository name
-4. Save connector
+4. Click **Save** (connector will be validated automatically)
+5. Supports up to 5 repository connectors
 
 **Creating GitHub Token:**
 
-1. Go to GitHub Settings → Developer Settings → Personal Access Tokens
-2. Generate new token (classic)
-3. Select `repo` scope
-4. Copy token
+1. Go to [GitHub Settings](https://github.com/settings/tokens) → Developer Settings → Personal Access Tokens
+2. Click "Generate new token (classic)"
+3. Select scopes:
+   - `repo` - Full control of private repositories (required)
+4. Generate and copy the token
+5. Paste into SnapFlow connector form
 
-#### Zoho Projects Integration
+**How it works:**
 
-1. Go to **Settings** → **Connectors**
-2. Click **Add Connector** → **Zoho**
-3. Enter:
-   - **Access Token**: Zoho OAuth token
-   - **Portal ID**: Your Zoho portal ID
-   - **Project ID**: Target project ID
-4. Save connector
+- Screenshots are uploaded to `.snapflow-screenshots/` folder in your repository
+- Issue is created with screenshot embedded inline
+- Tags are converted to GitHub labels
+- Issue URL is stored for future reference
 
 ---
 
@@ -308,13 +348,21 @@ For detailed setup instructions, see [SUPABASE_SETUP.md](SUPABASE_SETUP.md)
 4. Navigate pages and adjust items per page (6, 12, 24, or 48)
 5. Click issue card to preview in full resolution
 
-#### Syncing to Platforms
+#### Syncing to GitHub
 
-1. Open issue preview or hover over issue card
-2. Click **GitHub** or **Zoho** button
-3. Wait for sync to complete (toast notifications show progress)
-4. View sync status badges (Local, Syncing, Synced, Failed)
-5. External issue links are stored for future reference
+1. Make sure you have configured a GitHub connector in Settings
+2. Open issue preview or click on an issue card
+3. Click **Sync to GitHub** button
+4. Select the connector/repository to sync to
+5. Wait for sync to complete (toast notifications show progress)
+6. View sync status badge and external link to GitHub issue
+
+#### Cloud Sync
+
+1. Issues are automatically synced to Supabase cloud storage
+2. Files and thumbnails are uploaded to `snapflow-public-bucket`
+3. Sync status is tracked per issue (local/syncing/synced/failed)
+4. View sync history in Settings → Sync tab
 
 #### Editing Issues
 
@@ -342,36 +390,55 @@ snapflow-desktop/
 │   ├── services/                  # Business logic modules
 │   │   ├── auth.ts                # Supabase authentication
 │   │   ├── capture.ts             # Screenshot capture with nativeImage
-│   │   ├── issues.ts              # Issue CRUD with Supabase
-│   │   └── connectors.ts          # GitHub/Zoho integrations
+│   │   ├── issues.ts              # Issue CRUD with local & cloud storage
+│   │   ├── connectors.ts          # GitHub integration management
+│   │   ├── sync.ts                # Supabase cloud sync service
+│   │   └── updater.ts             # Auto-update service
 │   ├── utils/                     # Utilities
 │   │   ├── supabase.ts            # Supabase client singleton
 │   │   ├── session.ts             # Local session management
-│   │   └── storage.ts             # Local file system storage
+│   │   ├── storage.ts             # Local file system storage
+│   │   └── id-generator.ts        # Unique ID generation
 │   └── helpers/
 │       └── create-window.ts       # BrowserWindow creation utility
 │
 ├── renderer/                      # Next.js frontend application
 │   ├── pages/                     # React pages
-│   │   ├── _app.tsx               # App wrapper
-│   │   ├── home.tsx               # Dashboard with issue list
+│   │   ├── _app.tsx               # App wrapper with Zustand store
+│   │   ├── home.tsx               # Dashboard with issue gallery
 │   │   ├── auth.tsx               # Login/signup page
-│   │   ├── annotate.tsx           # Image annotation editor
+│   │   ├── annotate.tsx           # Image annotation editor (Konva.js)
 │   │   ├── capture.tsx            # Capture mode selection
-│   │   ├── window-capture.tsx     # Window picker overlay
-│   │   ├── area-capture.tsx       # Area selection overlay
-│   │   └── settings.tsx           # App settings
+│   │   ├── window-capture.tsx     # Window capture with preview
+│   │   ├── window-picker.tsx      # Window selection overlay
+│   │   ├── area-capture.tsx       # Area selection mode
+│   │   ├── area-selector.tsx      # Region selection tool
+│   │   ├── settings.tsx           # Settings with 3 tabs
+│   │   └── next.tsx               # Next.js info page
 │   ├── components/
-│   │   ├── LocalImage.tsx         # Local file image loader
-│   │   └── ui/                    # Reusable UI components
-│   │       ├── Button.tsx
-│   │       ├── Input.tsx
-│   │       ├── Card.tsx
-│   │       ├── Badge.tsx
-│   │       ├── Dialog.tsx
-│   │       ├── Select.tsx
-│   │       ├── ChipsInput.tsx
-│   │       └── ...
+│   │   ├── ui/                    # Reusable UI components
+│   │   │   ├── Button.tsx         # Custom button component
+│   │   │   ├── Input.tsx          # Form input component
+│   │   │   ├── Card.tsx           # Issue card component
+│   │   │   ├── Badge.tsx          # Status badge component
+│   │   │   ├── Dialog.tsx         # Radix UI dialog wrapper
+│   │   │   ├── Select.tsx         # Custom select component
+│   │   │   ├── ChipsInput.tsx     # Tag input component
+│   │   │   ├── SearchInput.tsx    # Search input with icon
+│   │   │   ├── FilterBar.tsx      # Filter controls
+│   │   │   ├── Pagination.tsx     # Pagination with page size
+│   │   │   ├── EmptyState.tsx     # Empty state component
+│   │   │   ├── LoadingSpinner.tsx # Loading indicator
+│   │   │   ├── LocalImage.tsx     # Local file image renderer
+│   │   │   ├── FloatingActionButton.tsx # FAB component
+│   │   │   ├── Tooltip.tsx        # Radix tooltip wrapper
+│   │   │   └── index.ts           # Component exports
+│   │   └── settings/              # Settings page components
+│   │       ├── GitHubConnectorManager.tsx # GitHub config
+│   │       ├── DisplaysSection.tsx # Display settings
+│   │       ├── SyncIndicators.tsx  # Sync status display
+│   │       ├── UpdatesSection.tsx  # Update settings
+│   │       └── index.ts            # Component exports
 │   ├── store/
 │   │   └── useStore.ts            # Zustand state management
 │   ├── types/
@@ -387,12 +454,28 @@ snapflow-desktop/
 │   ├── icon.png                   # App icon (macOS dock/taskbar)
 │   ├── icon.icns                  # macOS app icon
 │   ├── icon.ico                   # Windows app icon
-│   └── tray-icon.png              # System tray icon
+│   ├── tray-icon.png              # System tray icon
+│   └── entitlements.mac.plist     # macOS app entitlements
 │
+├── .github/                       # GitHub configuration
+│   └── workflows/                 # CI/CD workflows (if any)
+├── .husky/                        # Git hooks
+│   └── pre-commit                 # Pre-commit hook
 ├── app/                           # Build output (generated)
-├── package.json                   # Project dependencies
+├── dist/                          # Distribution packages (generated)
+├── node_modules/                  # Dependencies (generated)
+│
+├── supabase-schema.sql            # Database schema & RLS policies
+├── package.json                   # Project dependencies & scripts
+├── package-lock.json              # Dependency lock file
 ├── tsconfig.json                  # Root TypeScript config
 ├── electron-builder.yml           # Electron build configuration
+├── eslint.config.mjs              # ESLint v9 flat config
+├── .prettierrc.json               # Prettier formatting rules
+├── .prettierignore                # Prettier ignore patterns
+├── .lintstagedrc.json             # Lint-staged configuration
+├── .gitignore                     # Git ignore patterns
+├── .env.example                   # Environment template
 └── .env                           # Environment variables (create this)
 ```
 
@@ -499,6 +582,31 @@ cat .env
 cp .env.example .env
 # Then add your credentials
 ```
+
+### Storage Bucket RLS Policy Error
+
+**Problem**: `StorageApiError: new row violates row-level security policy` or "Storage bucket is not available"
+
+**Root Cause**: The storage bucket doesn't exist or RLS policies are not configured properly.
+
+**Solution**:
+
+1. **Create the bucket manually** (bucket creation requires admin privileges):
+   - Go to Supabase Dashboard → **Storage**
+   - Click **New bucket**
+   - Name: `snapflow-public-bucket`
+   - Public: **Yes** (checked)
+   - File size limit: **52428800** (50MB)
+   - Click **Create bucket**
+
+2. **Verify RLS policies are applied**:
+   - Go to Supabase Dashboard → **SQL Editor**
+   - Run the storage policies section from [supabase-schema.sql](supabase-schema.sql#L113-L157)
+   - This ensures users can upload/read their own files
+
+3. **Restart the application** and try syncing again
+
+**Note**: Storage bucket creation cannot be done programmatically with RLS enabled. It must be created manually through the Supabase Dashboard.
 
 ### Authentication Errors
 
