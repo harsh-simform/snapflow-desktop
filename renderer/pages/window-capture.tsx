@@ -4,7 +4,7 @@ import Head from "next/head";
 interface WindowSource {
   id: string;
   name: string;
-  thumbnail: string;
+  thumbnail?: string;
 }
 
 export default function WindowCapture() {
@@ -15,17 +15,21 @@ export default function WindowCapture() {
 
   useEffect(() => {
     // Listen for available windows from main process
-    const unsubscribeWindows = window.api.onAvailableWindows((availableWindows) => {
-      console.log("Received windows:", availableWindows);
-      setWindows(availableWindows);
-    });
+    const unsubscribeWindows = window.api.onAvailableWindows(
+      (availableWindows) => {
+        console.log("Received windows:", availableWindows);
+        setWindows(availableWindows);
+      }
+    );
 
     // Listen for background screenshot
-    const unsubscribeScreenshot = window.api.onBackgroundScreenshot((data: any) => {
-      console.log("Received background screenshot for window selection");
-      setBackgroundImage(data.dataUrl);
-      setIsLoading(false);
-    });
+    const unsubscribeScreenshot = window.api.onBackgroundScreenshot(
+      (data: any) => {
+        console.log("Received background screenshot for window selection");
+        setBackgroundImage(data.dataUrl);
+        setIsLoading(false);
+      }
+    );
 
     // Handle escape key to cancel
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -58,7 +62,8 @@ export default function WindowCapture() {
         <title>Select Window - SnapFlow</title>
       </Head>
       <style jsx global>{`
-        html, body {
+        html,
+        body {
           background-color: transparent !important;
         }
       `}</style>
@@ -66,7 +71,9 @@ export default function WindowCapture() {
         className="fixed inset-0 cursor-pointer"
         style={{
           backgroundColor: "transparent",
-          backgroundImage: backgroundImage ? `url(${backgroundImage})` : undefined,
+          backgroundImage: backgroundImage
+            ? `url(${backgroundImage})`
+            : undefined,
           backgroundSize: "100% 100%",
           backgroundPosition: "top left",
           backgroundRepeat: "no-repeat",
@@ -75,7 +82,9 @@ export default function WindowCapture() {
         {/* Loading indicator */}
         {isLoading && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-900/80 z-50">
-            <div className="text-white text-lg">Loading available windows...</div>
+            <div className="text-white text-lg">
+              Loading available windows...
+            </div>
           </div>
         )}
 
@@ -125,9 +134,13 @@ export default function WindowCapture() {
 
                       {/* Window Name */}
                       <div className="flex-1 min-w-0">
-                        <p className={`text-base font-medium truncate transition-colors ${
-                          hoveredWindowId === window.id ? "text-white" : "text-gray-200"
-                        }`}>
+                        <p
+                          className={`text-base font-medium truncate transition-colors ${
+                            hoveredWindowId === window.id
+                              ? "text-white"
+                              : "text-gray-200"
+                          }`}
+                        >
                           {window.name}
                         </p>
                         <p className="text-xs text-gray-400 mt-1">
@@ -136,11 +149,25 @@ export default function WindowCapture() {
                       </div>
 
                       {/* Arrow indicator */}
-                      <div className={`flex-shrink-0 transition-all duration-200 ${
-                        hoveredWindowId === window.id ? "translate-x-1 text-blue-400" : "text-gray-500"
-                      }`}>
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      <div
+                        className={`flex-shrink-0 transition-all duration-200 ${
+                          hoveredWindowId === window.id
+                            ? "translate-x-1 text-blue-400"
+                            : "text-gray-500"
+                        }`}
+                      >
+                        <svg
+                          className="w-6 h-6"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M9 5l7 7-7 7"
+                          />
                         </svg>
                       </div>
                     </div>

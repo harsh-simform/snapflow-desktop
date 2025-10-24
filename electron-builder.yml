@@ -47,6 +47,10 @@ mac:
   gatekeeperAssess: false
   entitlements: resources/entitlements.mac.plist
   entitlementsInherit: resources/entitlements.mac.plist
+  extendInfo:
+    NSScreenCaptureUsageDescription: "SnapFlow needs access to record your screen to capture screenshots and recordings."
+    NSCameraUsageDescription: "SnapFlow may need camera access for video recordings with camera overlay."
+    NSMicrophoneUsageDescription: "SnapFlow needs microphone access to record audio with your screen recordings."
 
 dmg:
   title: ${productName} ${version}

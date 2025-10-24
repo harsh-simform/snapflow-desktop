@@ -89,7 +89,7 @@ const api = {
   deleteConnector: (id: string) =>
     ipcRenderer.invoke("connector:delete", { id }),
 
-  // Sync method
+  // Sync methods - GitHub
   syncIssue: (issueId: string, connectorId: string) =>
     ipcRenderer.invoke("sync:issue", { issueId, connectorId }),
   validateGitHubConnector: (accessToken: string, owner: string, repo: string) =>
@@ -98,6 +98,15 @@ const api = {
       owner,
       repo,
     }),
+
+  // Sync methods - Cloud (Supabase)
+  syncToCloud: (userId: string) =>
+    ipcRenderer.invoke("sync:to-cloud", { userId }),
+  syncFromCloud: (userId: string) =>
+    ipcRenderer.invoke("sync:from-cloud", { userId }),
+  fullSync: (userId: string) => ipcRenderer.invoke("sync:full", { userId }),
+  getSyncHistory: (userId: string) =>
+    ipcRenderer.invoke("sync:get-history", { userId }),
 
   // Database methods
   getDatabaseConfig: () => ipcRenderer.invoke("db:get-config"),

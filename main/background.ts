@@ -8,6 +8,7 @@ import { issueService } from "./services/issues";
 import { captureService } from "./services/capture";
 import { connectorService } from "./services/connectors";
 import { updaterService } from "./services/updater";
+import { syncService } from "./services/sync";
 import { storageManager } from "./utils/storage";
 import { sessionManager } from "./utils/session";
 import fs from "fs";
@@ -675,6 +676,7 @@ if (app && app.requestSingleInstanceLock) {
 
       // Initialize auto-updater (only in production)
       if (isProd && mainWindow) {
+        updaterService.init();
         updaterService.setMainWindow(mainWindow);
         // Check for updates 5 seconds after app starts
         setTimeout(() => {
@@ -1065,7 +1067,7 @@ function setupIPCHandlers() {
     }
   });
 
-  // Sync handler
+  // Sync handler - GitHub
   ipcMain.handle("sync:issue", async (_event, { issueId, connectorId }) => {
     try {
       const issue = issueService.getIssueById(issueId);
@@ -1084,6 +1086,8 @@ function setupIPCHandlers() {
         title: issue.title,
         description: issue.description,
         filePath: issue.filePath,
+        cloudFileUrl: issue.cloudFileUrl, // Pass the cloud URL if available
+        syncedTo: issue.syncedTo, // Pass existing sync info to check for duplicates
       });
 
       await issueService.updateSyncStatus(issueId, "synced", {
@@ -1092,9 +1096,54 @@ function setupIPCHandlers() {
         url: result.url,
       });
 
-      return { success: true, data: result };
+      return {
+        success: true,
+        data: {
+          ...result,
+          message: result.isUpdate
+            ? "GitHub issue updated successfully"
+            : "GitHub issue created successfully",
+        },
+      };
     } catch (error) {
       await issueService.updateSyncStatus(issueId, "failed");
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Sync handler - Cloud (Supabase)
+  ipcMain.handle("sync:to-cloud", async (_event, { userId }) => {
+    try {
+      const result = await syncService.syncAllToCloud(userId);
+      return { success: result.success, data: result };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("sync:from-cloud", async (_event, { userId }) => {
+    try {
+      const result = await syncService.fetchFromCloud(userId);
+      return { success: result.success, data: result };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("sync:full", async (_event, { userId }) => {
+    try {
+      const result = await syncService.fullSync(userId);
+      return { success: result.success, data: result };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("sync:get-history", async (_event, { userId }) => {
+    try {
+      const history = await syncService.getLatestSyncHistory(userId);
+      return { success: true, data: history };
+    } catch (error) {
       return { success: false, error: error.message };
     }
   });

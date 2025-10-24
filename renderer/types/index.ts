@@ -14,6 +14,8 @@ export interface Issue {
   timestamp: string;
   filePath: string;
   thumbnailPath?: string;
+  cloudFileUrl?: string;
+  cloudThumbnailUrl?: string;
   syncStatus: "local" | "synced" | "syncing" | "failed";
   syncedTo?: {
     platform: string;
@@ -27,18 +29,12 @@ export interface Issue {
 export interface Connector {
   id: string;
   name: string;
-  type: "github" | "zoho";
+  type: "github";
   enabled: boolean;
   config: {
-    accessToken?: string;
-    refreshToken?: string;
-    expiresAt?: string;
-    // GitHub specific
-    owner?: string;
-    repo?: string;
-    // Zoho specific
-    portalId?: string;
-    projectId?: string;
+    accessToken: string;
+    owner: string;
+    repo: string;
   };
 }
 

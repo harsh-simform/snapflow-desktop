@@ -63,7 +63,13 @@ export const LocalImage: React.FC<LocalImageProps> = ({
 
   if (loading) {
     return (
-      <div className={clsx("flex items-center justify-center bg-gray-900/30 rounded-lg w-full h-full", className)} style={style}>
+      <div
+        className={clsx(
+          "flex items-center justify-center bg-gray-900/30 rounded-lg w-full h-full",
+          className
+        )}
+        style={style}
+      >
         <div className="flex flex-col items-center justify-center">
           <svg
             className="w-12 h-12 text-gray-600 animate-spin mb-4"
@@ -100,7 +106,7 @@ export const LocalImage: React.FC<LocalImageProps> = ({
       alt={alt}
       className={clsx(className)}
       style={{
-        imageRendering: '-webkit-optimize-contrast',
+        imageRendering: "-webkit-optimize-contrast",
         ...style,
       }}
       loading="eager"
