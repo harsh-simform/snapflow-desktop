@@ -35,21 +35,24 @@
 ### Screenshot Capture (✅)
 
 - 📸 **Full Screen Capture** - Capture entire display with multi-monitor support
-- 🪟 **Window Capture** - Select and capture individual application windows
+- 🖥️ **Multi-Display Support** - Select specific screen to capture when using multiple monitors
+- 🪟 **Window Capture** - Select and capture individual application windows with preview
 - ✂️ **Region Selection** - Draw custom rectangular area to capture with transparent overlay
 - 📋 **Auto Clipboard Copy** - Screenshots automatically copied to clipboard for instant pasting
-- 🖥️ **High-DPI Support** - Perfect pixel-accurate captures on Retina displays
+- 🖥️ **High-DPI Support** - Perfect pixel-accurate captures on Retina displays using `nativeImage.crop()`
 - 🔐 **Permission Management** - Checks and guides macOS Screen Recording permissions
+- ⌨️ **Global Shortcuts** - Cmd+Shift+3 (Full Screen), Cmd+Shift+5 (Area) on macOS; Ctrl+Shift+3/5 on Windows/Linux
 
 ### Image Annotation (✅)
 
 - ✏️ **Freehand Drawing** - Pen tool with customizable colors and stroke width
-- 🔷 **Shape Tools** - Rectangles, circles with fill and stroke options
+- 🔷 **Shape Tools** - Rectangles and circles with fill and stroke options
 - ➡️ **Arrow Tool** - Directional arrows for pointing out specific areas
-- 📝 **Text Tool** - Add and edit text labels with custom styling
-- 🎨 **Color Picker** - 10+ predefined colors plus custom color selection
+- 📝 **Text Tool** - Add and edit text labels with custom styling (coming soon)
+- 🎨 **Color Picker** - 9 predefined colors plus custom color selection
 - ↩️ **Undo/Redo** - Complete action history management
 - 🖱️ **Selection & Transform** - Select, move, and resize drawn elements
+- 🎨 **Konva.js Canvas** - Powerful 2D drawing engine for smooth annotations
 
 ### Issue Tracking (✅)
 
@@ -84,12 +87,14 @@
 ### User Experience (✅)
 
 - 🎨 **Dark Mode UI** - Beautiful dark theme interface with Radix UI components
-- ⚡ **System Tray** - Quick access to capture from menu bar
-- 🎬 **Smooth Animations** - Framer Motion transitions
+- ⚡ **System Tray** - Quick access to capture from menu bar (both white and dark icons)
+- 🎬 **Smooth Animations** - Framer Motion transitions with custom animations (fade-in, slide, scale, shimmer, float)
 - 🔔 **Toast Notifications** - User-friendly feedback with Sonner
-- 💻 **Cross-Platform** - macOS support (Windows/Linux coming soon)
+- 💻 **Cross-Platform** - Full macOS, Windows, and Linux support with platform-specific builds
 - 📱 **Responsive Design** - Adaptive layout for different screen sizes
 - 📄 **Pagination** - Efficient browsing with customizable items per page (6, 12, 24, 48)
+- 🪟 **Window Controls** - Draggable titlebar with minimize/maximize/close buttons
+- ⌨️ **Keyboard Shortcuts** - Global hotkeys for quick capture and in-app shortcuts for editing
 
 ### Planned Features (📋)
 
@@ -109,14 +114,14 @@
 - **Framework**: [Next.js](https://nextjs.org/) 14.2.4 with [React](https://react.dev/) 18.3.1
 - **Language**: [TypeScript](https://www.typescriptlang.org/) 5.7.3
 - **Styling**: [Tailwind CSS](https://tailwindcss.com/) 3.4.3
-- **UI Components**: [Radix UI](https://www.radix-ui.com/) v2 (Dialog, Select, Dropdown, Tooltip, etc.)
+- **UI Components**: [Radix UI](https://www.radix-ui.com/) (Dialog, Select, Label, Tooltip, Slot, Visually Hidden)
 - **State Management**: [Zustand](https://zustand-demo.pmnd.rs/) 5.0.8
 - **Canvas Library**: [Konva.js](https://konvajs.org/) 9.3.16 with [React-Konva](https://konvajs.org/docs/react/) 18.2.10
 - **Animations**: [Framer Motion](https://www.framer.com/motion/) 12.23.24
 - **Notifications**: [Sonner](https://sonner.emilkowal.ski/) 2.0.7
 - **Date Utilities**: [date-fns](https://date-fns.org/) 3.3.1
-- **Form Handling**: [React Hook Form](https://react-hook-form.com/) 7.65.0
-- **Validation**: [Zod](https://zod.dev/) 4.1.12
+- **Icons**: [React Icons](https://react-icons.github.io/react-icons/) 5.0.1
+- **UI Utilities**: [clsx](https://github.com/lukeed/clsx) 2.1.0, [class-variance-authority](https://cva.style/docs) 0.7.1
 
 ### Backend (Main Process)
 
@@ -134,11 +139,12 @@
 ### Development Tools
 
 - **Build Tool**: [electron-builder](https://www.electron.build/) 24.13.3
-- **Package Manager**: npm/yarn/pnpm
-- **Code Quality**: [ESLint](https://eslint.org/) 9.38.0 with TypeScript support
+- **Package Manager**: npm (with package-lock.json)
+- **Code Quality**: [ESLint](https://eslint.org/) 9.38.0 with [@typescript-eslint](https://typescript-eslint.io/) 8.46.1
 - **Code Formatting**: [Prettier](https://prettier.io/) 3.6.2
 - **Pre-commit Hooks**: [Husky](https://typicode.github.io/husky/) 9.1.7
 - **Staged Files Linting**: [lint-staged](https://github.com/okonet/lint-staged) 16.2.4
+- **PostCSS**: [PostCSS](https://postcss.org/) 8.4.38 with [Autoprefixer](https://github.com/postcss/autoprefixer) 10.4.19
 
 ---
 
@@ -235,12 +241,15 @@ Create a `.env` file in the root directory:
 
 ```env
 # Supabase Configuration
+# Get these from https://app.supabase.com → Your Project → Settings → API
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key-here
 
 # Node environment
-NODE_ENV="development"  # or "production"
+NODE_ENV=development  # or "production" (no quotes needed)
 ```
+
+**Note**: The `.env` file is automatically loaded by the main process. Use `.env.example` as a template.
 
 ### Supabase Setup
 
@@ -375,10 +384,23 @@ SnapFlow uses Supabase for:
 
 ### Keyboard Shortcuts
 
+#### Global Shortcuts (System-wide)
+
+- **macOS**:
+  - **Cmd + Shift + 3**: Capture full screen
+  - **Cmd + Shift + 5**: Capture selected area
+- **Windows/Linux**:
+  - **Ctrl + Shift + 3**: Capture full screen
+  - **Ctrl + Shift + 5**: Capture selected area
+
+#### In-App Shortcuts
+
 - **ESC**: Cancel area/window selection or close dialog
 - **Cmd/Ctrl + V**: Paste captured screenshot (auto-copied to clipboard)
 - **Cmd/Ctrl + Z**: Undo (in annotation editor)
 - **Cmd/Ctrl + Shift + Z**: Redo (in annotation editor)
+
+**Note**: Global shortcuts work even when the app is in the background, providing quick access to capture functionality.
 
 ---
 
@@ -406,8 +428,8 @@ snapflow-desktop/
 │
 ├── renderer/                      # Next.js frontend application
 │   ├── pages/                     # React pages
-│   │   ├── _app.tsx               # App wrapper with Zustand store
-│   │   ├── home.tsx               # Dashboard with issue gallery
+│   │   ├── _app.tsx               # App wrapper with Zustand store, Sonner toast, Radix tooltip
+│   │   ├── home.tsx               # Dashboard with issue gallery, filtering, pagination
 │   │   ├── auth.tsx               # Login/signup page
 │   │   ├── annotate.tsx           # Image annotation editor (Konva.js)
 │   │   ├── capture.tsx            # Capture mode selection
@@ -415,10 +437,11 @@ snapflow-desktop/
 │   │   ├── window-picker.tsx      # Window selection overlay
 │   │   ├── area-capture.tsx       # Area selection mode
 │   │   ├── area-selector.tsx      # Region selection tool
-│   │   ├── settings.tsx           # Settings with 3 tabs
-│   │   └── next.tsx               # Next.js info page
+│   │   ├── settings.tsx           # Settings with tabs (Account, Connectors, Display, Sync, Updates)
+│   │   ├── next.tsx               # Next.js info page
+│   │   └── recording-control.tsx  # Recording controls window (infrastructure)
 │   ├── components/
-│   │   ├── ui/                    # Reusable UI components
+│   │   ├── ui/                    # Reusable UI components (20+ components)
 │   │   │   ├── Button.tsx         # Custom button component
 │   │   │   ├── Input.tsx          # Form input component
 │   │   │   ├── Card.tsx           # Issue card component
@@ -428,17 +451,21 @@ snapflow-desktop/
 │   │   │   ├── ChipsInput.tsx     # Tag input component
 │   │   │   ├── SearchInput.tsx    # Search input with icon
 │   │   │   ├── FilterBar.tsx      # Filter controls
-│   │   │   ├── Pagination.tsx     # Pagination with page size
+│   │   │   ├── Pagination.tsx     # Pagination with page size selector
 │   │   │   ├── EmptyState.tsx     # Empty state component
 │   │   │   ├── LoadingSpinner.tsx # Loading indicator
 │   │   │   ├── LocalImage.tsx     # Local file image renderer
 │   │   │   ├── FloatingActionButton.tsx # FAB component
 │   │   │   ├── Tooltip.tsx        # Radix tooltip wrapper
+│   │   │   ├── Label.tsx          # Form label component
+│   │   │   ├── IssuePreviewDialog.tsx # Issue preview modal
 │   │   │   └── index.ts           # Component exports
 │   │   └── settings/              # Settings page components
+│   │       ├── AccountSection.tsx  # Account info and logout
+│   │       ├── ConnectorsTab.tsx   # Platform connectors management
 │   │       ├── GitHubConnectorManager.tsx # GitHub config
-│   │       ├── DisplaysSection.tsx # Display settings
-│   │       ├── SyncIndicators.tsx  # Sync status display
+│   │       ├── DisplaySection.tsx  # Display settings
+│   │       ├── SyncTab.tsx         # Sync status and history
 │   │       ├── UpdatesSection.tsx  # Update settings
 │   │       └── index.ts            # Component exports
 │   ├── store/
@@ -456,11 +483,14 @@ snapflow-desktop/
 │   ├── icon.png                   # App icon (macOS dock/taskbar)
 │   ├── icon.icns                  # macOS app icon
 │   ├── icon.ico                   # Windows app icon
-│   ├── tray-icon.png              # System tray icon
+│   ├── tray-icon.png              # System tray icon (dark theme)
+│   ├── tray-icon-white.png        # System tray icon (light theme)
 │   └── entitlements.mac.plist     # macOS app entitlements
 │
 ├── .github/                       # GitHub configuration
-│   └── workflows/                 # CI/CD workflows (if any)
+│   └── workflows/                 # CI/CD workflows
+│       ├── ci.yml                 # Lint, format, type-check, build validation
+│       └── release.yml            # Build and publish releases (triggered by tags)
 ├── .husky/                        # Git hooks
 │   └── pre-commit                 # Pre-commit hook
 ├── app/                           # Build output (generated)
@@ -468,6 +498,7 @@ snapflow-desktop/
 ├── node_modules/                  # Dependencies (generated)
 │
 ├── supabase-schema.sql            # Database schema & RLS policies
+├── CHANGELOG.md                   # Version history and release notes
 ├── package.json                   # Project dependencies & scripts
 ├── package-lock.json              # Dependency lock file
 ├── tsconfig.json                  # Root TypeScript config
@@ -496,15 +527,23 @@ npm run dev              # Start development server with hot reload
 ```bash
 npm run format           # Format all files with Prettier
 npm run format:check     # Check if files are formatted
-npm run lint             # Run ESLint on all files
-npm run lint:fix         # Run ESLint and fix issues
-npm run type-check       # Run TypeScript type checking
+npm run lint             # Run ESLint on all files (.js, .jsx, .ts, .tsx)
+npm run lint:fix         # Run ESLint and auto-fix issues
+npm run type-check       # Run TypeScript type checking (without emitting files)
 ```
 
 ### Build
 
 ```bash
-npm run build            # Build production app (macOS/Windows/Linux)
+npm run build            # Build production app for all platforms (macOS/Windows/Linux)
+npm run build:no-pack    # Build without packaging (for CI validation)
+```
+
+### Git Hooks & Setup
+
+```bash
+npm run prepare          # Initialize Husky git hooks (runs automatically after npm install)
+npm run postinstall      # Install electron-builder app deps (runs automatically after npm install)
 ```
 
 ---
@@ -513,9 +552,11 @@ npm run build            # Build production app (macOS/Windows/Linux)
 
 SnapFlow uses GitHub Actions for automated builds and releases across macOS, Windows, and Linux platforms.
 
+**Repository**: The workflows are configured for `harsh-simform/snapflow-desktop` repository.
+
 ### CI/CD Workflows
 
-The project includes two GitHub Actions workflows:
+The project includes two GitHub Actions workflows in `.github/workflows/`:
 
 #### 1. **CI Workflow** (`.github/workflows/ci.yml`)
 
@@ -532,12 +573,14 @@ The project includes two GitHub Actions workflows:
 
 - **Triggers**:
   - Git tags matching `v*.*.*` (e.g., `v1.0.0`)
-  - Manual workflow dispatch
+  - Manual workflow dispatch with version input
 - **Purpose**: Build and publish release artifacts
 - **Actions**:
-  - Builds for macOS, Windows, and Linux
-  - Creates GitHub draft release with artifacts
+  - Creates `.env` file from GitHub secrets (SUPABASE_URL, SUPABASE_ANON_KEY)
+  - Builds for macOS, Windows, and Linux in parallel
+  - Creates/updates GitHub draft release with artifacts
   - Uploads platform-specific installers
+  - Generates release notes from commit history
 
 ### Creating a Release
 
@@ -577,6 +620,12 @@ git tag -a v1.0.0 -m "Release v1.0.0"
 # Push tag to trigger release workflow
 git push origin v1.0.0
 ```
+
+**Important**: Ensure GitHub secrets are configured for the release workflow:
+
+- `SUPABASE_URL` - Your Supabase project URL
+- `SUPABASE_ANON_KEY` - Your Supabase anon/public key
+- `GH_TOKEN` - GitHub token (automatically provided by GitHub Actions)
 
 #### Step 4: Monitor Release Build
 
@@ -730,11 +779,11 @@ npm run type-check          # Verify TypeScript types
 
 ### Configuration Files
 
-- **`.prettierrc.json`** - Prettier formatting rules
-- **`.prettierignore`** - Files to skip formatting
-- **`.eslintrc.json`** - ESLint rules for code quality
-- **`.lintstagedrc.json`** - Lint-staged configuration
-- **`.husky/pre-commit`** - Pre-commit hook script
+- **`.prettierrc.json`** - Prettier formatting rules (print width 80, double quotes, tab width 2)
+- **`.prettierignore`** - Files to skip formatting (node_modules, dist, app, .next, etc.)
+- **`eslint.config.mjs`** - ESLint v9 flat config with TypeScript support
+- **`.lintstagedrc.json`** - Lint-staged configuration (runs ESLint + Prettier on staged files)
+- **`.husky/pre-commit`** - Pre-commit hook script (runs lint-staged)
 
 ---
 
@@ -756,7 +805,7 @@ rm -rf ~/Library/Application\ Support/SnapFlow
 npm run dev
 ```
 
-**Note**: The latest version uses direct coordinate mapping with native Electron APIs for pixel-perfect accuracy.
+**Note**: The latest version uses `nativeImage.crop()` with direct coordinate mapping for pixel-perfect accuracy. This fix is implemented in `main/services/capture.ts`.
 
 ### Supabase Connection Issues
 
@@ -801,6 +850,8 @@ cp .env.example .env
 3. **Restart the application** and try syncing again
 
 **Note**: Storage bucket creation cannot be done programmatically with RLS enabled. It must be created manually through the Supabase Dashboard.
+
+**Reference**: See `main/services/sync.ts` for the storage upload implementation.
 
 ### Authentication Errors
 
@@ -919,8 +970,11 @@ The project enforces code quality through automated tools:
 
 ### Documentation for Developers
 
-- [Development Guide](DEVELOPMENT.md) - Complete development workflow and guidelines
-- [Code Quality Guide](.github/CODE_QUALITY.md) - Detailed info on Prettier, ESLint, and pre-commit hooks
+- **README.md** (this file) - Complete setup, features, and troubleshooting guide
+- **CHANGELOG.md** - Version history with detailed release notes
+- **supabase-schema.sql** - Database schema, tables, indexes, and RLS policies
+- **.env.example** - Environment variables template
+- **package.json** - Dependencies, scripts, and project metadata
 
 ---
 
