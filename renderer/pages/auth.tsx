@@ -124,10 +124,10 @@ export default function AuthPage() {
       <Head>
         <title>{isLogin ? "Login" : "Sign Up"} - SnapFlow</title>
       </Head>
-      <div className="min-h-screen bg-gray-950">
+      <div className="h-screen bg-gray-950 flex flex-col overflow-hidden">
         {/* Titlebar with Window Controls - Draggable */}
         <div
-          className="glass-strong border-b border-white/5 sticky top-0 z-20 backdrop-blur-xl"
+          className="glass-strong border-b border-white/5 flex-shrink-0"
           style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
         >
           <div className="flex items-center justify-end h-9 pl-4">
@@ -137,34 +137,8 @@ export default function AuthPage() {
           </div>
         </div>
 
-        {/* Header/Navbar */}
-        <header className="glass-strong border-b border-white/10 sticky top-9 z-10 backdrop-blur-xl">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-600/25">
-                  <svg
-                    className="w-6 h-6 text-white"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M13 10V3L4 14h7v7l9-11h-7z"
-                    />
-                  </svg>
-                </div>
-                <h1 className="text-2xl font-bold text-blue-400">SnapFlow</h1>
-              </div>
-            </div>
-          </div>
-        </header>
-
         {/* Auth Content */}
-        <div className="flex items-center justify-center p-4 min-h-[calc(100vh-80px)]">
+        <div className="flex-1 flex items-center justify-center p-4 overflow-y-auto">
           <div className="relative bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md p-8 border border-gray-800">
             <div className="text-center mb-8">
               <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-2xl mb-4">
