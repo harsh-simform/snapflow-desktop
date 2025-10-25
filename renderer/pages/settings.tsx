@@ -14,10 +14,16 @@ import {
 
 type Tab = "account" | "connectors" | "sync" | "general";
 
+interface User {
+  id: string;
+  name: string;
+  email: string;
+}
+
 export default function SettingsPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<Tab>("account");
-  const [user, setUser] = useState<{ id: string } | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
