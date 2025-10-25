@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-SnapFlow is an Electron-based desktop app for screenshot/screen recording with issue tracking and external platform sync (GitHub, Zoho). Built with **Nextron** (Next.js + Electron), TypeScript, Tailwind CSS, Zustand, and **Prisma + PostgreSQL**.
+SnapFlow is an Electron-based desktop app for screenshot/screen recording with issue tracking and cloud sync (GitHub integration + Supabase). Built with **Nextron** (Next.js + Electron), TypeScript, Tailwind CSS, Zustand, and **Supabase** (PostgreSQL + Auth + Storage).
 
 ## Architecture
 
@@ -10,61 +10,70 @@ SnapFlow is an Electron-based desktop app for screenshot/screen recording with i
 
 1. **Main Process** (`main/`) - Electron backend, IPC handlers, system integrations
 2. **Renderer Process** (`renderer/`) - Next.js frontend, React components, UI
-3. **Preload Bridge** (`main/preload.ts`) - Secure IPC communication layer
+3. **Preload Bridge** (`main/preload.ts`) - Secure IPC communication layer via `contextBridge`
 
 ### Critical Data Flow
 
-- **User Auth**: PostgreSQL database via Prisma ORM + bcrypt for password hashing
-- **Session Management**: In-memory session store (`main/utils/session.ts`) for current user
-- **Storage**: Files organized by date: `~/SnapFlow/Captures/{year}/{month}/{day}/{issueId}/`
+- **User Auth**: Supabase Auth (`@supabase/supabase-js`) with JWT tokens and automatic refresh
+- **Session Management**: In-memory + persistent storage via `electron-store` (`main/utils/session.ts`)
+- **Local Storage**: Files in user-specific folders: `~/SnapFlow/Users/{userId}/Captures/{year}/{month}/{day}/{issueId}/`
+- **Cloud Storage**: Supabase Storage bucket (`snapflow-public-bucket`) for file sync
+- **Database**: Supabase PostgreSQL with Row-Level Security (RLS) policies
 - **IPC Pattern**: Renderer → `window.api.*` → Preload → Main Process handlers → Services
 
 ## Development Commands
 
 ```bash
-npm run dev              # Start development (Nextron hot-reload)
+npm run dev              # Start development (Nextron hot-reload on dynamic port)
 npm run build            # Production build (creates distributable)
-npm run postinstall      # Rebuild native modules + generate Prisma Client
-npm run prisma:migrate   # Create and apply database migrations (dev)
-npm run prisma:push      # Push schema to database (production)
-npm run prisma:studio    # Open Prisma Studio (database GUI)
+npm run postinstall      # Rebuild native Electron dependencies
+npm run format           # Format code with Prettier
+npm run lint             # Lint code with ESLint v9
+npm run type-check       # TypeScript type checking
 ```
 
-**Port Note**: Dev server uses dynamic port passed as `process.argv[2]` to main process.
+**Critical Notes**:
+
+- Dev server uses dynamic port passed as `process.argv[2]` to main process
+- Environment variables loaded via `dotenv` from `.env` file (see `.env.example`)
+- Requires `SUPABASE_URL` and `SUPABASE_ANON_KEY` env vars
 
 ## Key Conventions
 
-### Database & Prisma Patterns
+### Supabase Integration Patterns
 
-- **Schema Location**: `prisma/schema.prisma` - single source of truth
-- **Client Singleton**: `main/utils/prisma.ts` - prevents multiple instances
-- **Migrations**: Use `npm run prisma:migrate` for schema changes in development
-- **Connection Config**: Managed by `main/services/config.ts` - supports both env vars and runtime config
-- **Session State**: `sessionManager` stores current logged-in user in memory
+- **Client Singleton**: `main/utils/supabase.ts` - lazy initialization with custom `electron-store` adapter
+- **Auth Flow**: Sign up/in returns JWT token, stored in session, auto-refresh enabled
+- **Session Persistence**: `electron-store` (named `snapflow-session`) stores user + Supabase session
+- **Row-Level Security**: All database tables use RLS policies (`user_id = auth.uid()`)
+- **Schema Management**: SQL schema in `supabase-schema.sql` (run manually in Supabase Dashboard)
+- **Storage Bucket**: `snapflow-public-bucket` (public, 50MB limit) - stores screenshots and thumbnails
 
 ### IPC Communication Pattern
 
 - **Main Process**: Define handlers with `ipcMain.handle('channel:action', async (_event, args) => {})`
 - **Preload**: Expose methods via `contextBridge` as `window.api.*`
 - **Renderer**: Call `await window.api.methodName(args)` (returns `{success: boolean, data?, error?}`)
-- **Example**: User login flows through `renderer/pages/auth.tsx` → `window.api.loginUser()` → `main/preload.ts` → `ipcMain.handle('user:login')` → `main/services/auth.ts` → Prisma query
+- **Example**: User login flows through `renderer/pages/auth.tsx` → `window.api.loginUser()` → `main/preload.ts` → `ipcMain.handle('user:login')` → `main/services/auth.ts` → Supabase Auth
+- **Channel Naming**: Use `namespace:action` format (e.g., `user:login`, `capture:screenshot`, `sync:issue`)
 
 ### Service Layer Pattern
 
 All business logic lives in `main/services/`:
 
-- `auth.ts` - User management with Prisma (CRUD operations, password handling)
-- `config.ts` - Database configuration management
-- `capture.ts` - Screenshot/recording using `desktopCapturer` + `sharp`
-- `connectors.ts` - External platform sync (GitHub/Zoho APIs)
-- `issues.ts` - Issue CRUD operations
+- `auth.ts` - Supabase Auth (signup, login, logout, session management)
+- `capture.ts` - Screenshot/recording using `desktopCapturer` + Electron `nativeImage`
+- `connectors.ts` - GitHub integration (issue creation with embedded images)
+- `issues.ts` - Issue CRUD with local + Supabase storage
+- `sync.ts` - Cloud sync service (Supabase Storage uploads/downloads)
+- `updater.ts` - Auto-update via `electron-updater` (GitHub releases)
 
-Each service uses Prisma for database queries or `electron-store` for app settings.
+Each service uses Supabase Client for database/storage or `electron-store` for local app settings.
 
 ### State Management
 
 - **Frontend**: Zustand store (`renderer/store/useStore.ts`) for UI state
-- **Backend**: Prisma + PostgreSQL for persistent data
+- **Backend**: Supabase (PostgreSQL) for persistent data
 - **Session**: `sessionManager` for current user (cleared on logout)
 - **Never** store sensitive data in renderer - use IPC to access from main process
 
@@ -74,21 +83,23 @@ Each service uses Prisma for database queries or `electron-store` for app settin
 - Variants with `class-variance-authority` (see `renderer/components/ui/Button.tsx`)
 - Tailwind classes: Prefer composition over @apply
 - Toast notifications: `sonner` library (`toast.success()`, `toast.error()`)
+- Canvas: Konva.js + React-Konva for screenshot annotation (loaded dynamically to avoid SSR issues)
 
 ### Window Management
 
 - Main window uses `main/helpers/create-window.ts` for position persistence
 - Hide instead of close (minimize to tray): `window.on('close', event.preventDefault())`
 - System tray always present with quick actions menu
+- **Multi-window types**: Main, window capture overlay, recording control, area selector
 
 ## File Organization Patterns
 
-### Adding New Database Models
+### Adding New Database Tables
 
-1. Define model in `prisma/schema.prisma` with proper relations
-2. Run `npm run prisma:migrate` and provide descriptive migration name
-3. Prisma Client auto-regenerates with new types
-4. Use `prisma.*` from `main/utils/prisma.ts` in services
+1. Add SQL to `supabase-schema.sql` with proper RLS policies
+2. Run SQL in Supabase Dashboard SQL Editor
+3. Update TypeScript interfaces in `renderer/types/index.ts`
+4. Update service methods to query new table
 
 ### Adding New IPC Channels
 
@@ -107,18 +118,18 @@ Each service uses Prisma for database queries or `electron-store` for app settin
 ### Adding New Services
 
 - Create class in `main/services/*.ts`
-- Import `prisma` from `main/utils/prisma.ts` for database queries
+- Import `getSupabase()` from `main/utils/supabase.ts` for database/storage operations
 - Export singleton instance: `export const myService = new MyService()`
 - Import and use in `main/background.ts` IPC handlers
 
 ## Critical Quirks
 
-### Prisma in Electron
+### Supabase in Electron
 
-- Use singleton pattern to prevent multiple Prisma instances during hot-reload
-- Call `disconnectPrisma()` on `app.on('before-quit')` for graceful shutdown
-- Prisma Client output: `node_modules/.prisma/client` (standard location)
-- Connection string priority: env variable > stored config > default
+- Custom storage adapter uses `electron-store` to persist Supabase session
+- Session auto-refresh handled by Supabase SDK with `autoRefreshToken: true`
+- Check `getSupabase()` returns non-null before using (warns if env vars missing)
+- RLS policies enforce `auth.uid() = user_id` on all queries
 
 ### Next.js Static Export
 
@@ -141,42 +152,41 @@ Each service uses Prisma for database queries or `electron-store` for app settin
 
 ## Type Safety
 
-- Shared types in `renderer/types/index.ts` (keep in sync with Prisma models)
-- Prisma generates TypeScript types automatically from schema
+- Shared types in `renderer/types/index.ts` (keep in sync with Supabase tables)
+- Supabase types match SQL schema in `supabase-schema.sql`
 - IPC responses always shaped as `{success: boolean, data?: T, error?: string}`
 - Use discriminated unions for multi-type captures: `type: 'screenshot' | 'recording'`
 
 ## Database Workflows
 
-### Creating Migrations (Development)
+### Setting Up Supabase
+
+1. Create Supabase project at [supabase.com](https://supabase.com)
+2. Copy `SUPABASE_URL` and `SUPABASE_ANON_KEY` to `.env`
+3. Run SQL from `supabase-schema.sql` in Supabase Dashboard SQL Editor
+4. Create storage bucket `snapflow-public-bucket` (public, 50MB limit, image/video MIME types)
+5. Storage policies auto-created by schema
+
+### Updating Schema
 
 ```bash
-# 1. Modify prisma/schema.prisma
-# 2. Create and apply migration
-npm run prisma:migrate
-# 3. Enter descriptive name (e.g., "add_user_roles")
-```
-
-### Updating Schema (Production)
-
-```bash
-# Push schema changes without creating migration files
-npm run prisma:push
+# 1. Edit supabase-schema.sql
+# 2. Run new SQL in Supabase Dashboard SQL Editor
+# 3. Update TypeScript types in renderer/types/index.ts
 ```
 
 ### Inspecting Database
 
-```bash
-# Open visual database editor
-npm run prisma:studio
-```
+- Use Supabase Dashboard Table Editor to view data
+- SQL Editor for ad-hoc queries
+- Authentication section for user management
 
 ## Testing Approach
 
 - Main focus: Manual E2E testing in dev mode
 - No formal test suite currently (future addition)
 - Use DevTools in dev: `mainWindow.webContents.openDevTools()` auto-enabled
-- Test database connection: `await window.api.testDatabaseConnection()`
+- Test database connection: Check Supabase Dashboard or verify session after login
 
 ## Common Tasks
 
@@ -186,11 +196,12 @@ npm run prisma:studio
 2. Create sync method in `main/services/connectors.ts` (follow `syncToGitHub` pattern)
 3. Add UI in `renderer/pages/settings.tsx` for OAuth/config
 4. Handle in `ipcMain.handle('sync:issue')` switch statement
+5. Add new Supabase table for connector storage with RLS policies
 
 ### Adding User Profile Fields
 
-1. Update `User` model in `prisma/schema.prisma`
-2. Run `npm run prisma:migrate` to create migration
+1. Update SQL schema in `supabase-schema.sql` (alter `auth.users` metadata)
+2. Run SQL in Supabase Dashboard
 3. Update `renderer/types/index.ts` User interface to match
 4. Update `main/services/auth.ts` methods to handle new fields
 5. Update UI components in `renderer/pages/` as needed
@@ -198,10 +209,32 @@ npm run prisma:studio
 ### Debugging Issues
 
 - **IPC**: Check `main/background.ts` console (terminal) and renderer DevTools
-- **Database**: Check connection with `await prisma.$queryRaw\`SELECT 1\``
-- **Prisma Logs**: Set `log: ['query', 'error']` in `main/utils/prisma.ts`
+- **Database**: Check Supabase Dashboard Table Editor or SQL Editor
+- **Supabase Auth**: Check Authentication section in Supabase Dashboard
+- **Session**: `console.log(sessionManager.getUser())` in main process
 - **Verify preload**: `console.log(window.api)` in renderer
 
-## Database Setup
+## Environment Setup
 
-See `docs/DATABASE_SETUP.md` for detailed PostgreSQL configuration, migration workflows, and troubleshooting guides.
+### Required Environment Variables
+
+```bash
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-anon-key
+```
+
+### Supabase Setup Checklist
+
+1. ✅ Create Supabase project
+2. ✅ Copy credentials to `.env`
+3. ✅ Run `supabase-schema.sql` in SQL Editor
+4. ✅ Create storage bucket `snapflow-public-bucket`
+5. ✅ Configure bucket: Public, 50MB limit, image/video MIME types
+6. ✅ Test connection: Run app and sign up
+
+### Build Configuration
+
+- **electron-builder.yml**: Includes `.env` file in production build
+- **Production env loading**: Checks multiple paths (app.asar, resources, app directory)
+- **Development**: Loads `.env` from project root via `dotenv.config()`
+- **Native modules**: Uses `electron-builder` to rebuild for Electron
