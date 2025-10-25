@@ -13,3 +13,6 @@ next-env.d.ts
 dist
 .env
 /app/generated/prisma
+
+# macOS
+.DS_Store
