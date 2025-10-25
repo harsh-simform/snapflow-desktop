@@ -95,7 +95,7 @@ jobs:
             **/*.AppImage
             **/*.deb
             **/*.rpm
-            **/*.yml
+            **/latest*.yml
           draft: true
           generate_release_notes: true
         env:
