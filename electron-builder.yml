@@ -116,6 +116,7 @@ extraMetadata:
 
 # Auto-update configuration
 # Publishing is handled by GitHub Actions workflow
+publish: never
 # publish:
 #   provider: github
 #   owner: harsh-simform
