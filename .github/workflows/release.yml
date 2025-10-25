@@ -15,11 +15,11 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  build:
+    name: Build Electron App
     strategy:
       matrix:
         os: [macos-latest, windows-latest, ubuntu-latest]
-
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -35,31 +35,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # macOS specific steps
-      # Note: GH_TOKEN is not set here to prevent electron-builder from auto-publishing
-      # This avoids conflicts when multiple runners try to upload simultaneously
-      - name: Build (macOS)
-        if: matrix.os == 'macos-latest'
-        run: npm run build
-        # Code signing is optional - only set if secrets are configured
-        # env:
-        #   APPLE_ID: ${{ secrets.APPLE_ID }}
-        #   APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-        #   APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        #   CSC_LINK: ${{ secrets.MAC_CERTS }}
-        #   CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
-
-      # Windows specific steps
-      - name: Build (Windows)
-        if: matrix.os == 'windows-latest'
+      # Run build (same script for all platforms)
+      - name: Build App
         run: npm run build
 
-      # Linux specific steps
-      - name: Build (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: npm run build
-
-      - name: Upload artifacts
+      # Upload platform-specific build outputs
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.os }}-build
@@ -73,42 +54,62 @@ jobs:
             dist/*.yml
           if-no-files-found: ignore
 
-  create-release:
-    needs: release
+  release:
+    name: Create GitHub Release
+    needs: build
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
 
-      - name: Delete existing release assets
+      - name: Display downloaded artifacts (debug)
+        run: ls -R ./artifacts
+
+      - name: Determine tag version
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Delete existing release assets (if workflow_dispatch)
         if: github.event_name == 'workflow_dispatch'
         continue-on-error: true
-        run: |
-          TAG="${{ github.event.inputs.version || github.ref_name }}"
-          gh release view "$TAG" --json assets --jq '.assets[].name' | while read asset; do
-            echo "Deleting $asset..."
-            gh release delete-asset "$TAG" "$asset" -y || true
-          done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          echo "Checking for existing assets on release $TAG..."
+          gh release view "$TAG" --json assets --jq '.assets[].name' | while read asset; do
+            echo "Deleting asset $asset..."
+            gh release delete-asset "$TAG" "$asset" -y || true
+          done
 
-      - name: Create GitHub Release
+      - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.version || github.ref_name }}
-          files: |
-            **/*.dmg
-            **/*.zip
-            **/*.exe
-            **/*.AppImage
-            **/*.deb
-            **/*.rpm
-            **/latest*.yml
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "Release ${{ steps.tag.outputs.tag }}"
           draft: true
           generate_release_notes: true
-          fail_on_unmatched_files: false
           make_latest: true
+          fail_on_unmatched_files: false
+          files: |
+            artifacts/**/*.dmg
+            artifacts/**/*.zip
+            artifacts/**/*.exe
+            artifacts/**/*.AppImage
+            artifacts/**/*.deb
+            artifacts/**/*.rpm
+            artifacts/**/*.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

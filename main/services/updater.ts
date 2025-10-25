@@ -18,6 +18,18 @@ export class UpdaterService {
     autoUpdater.logger = log;
     (autoUpdater.logger as typeof log).transports.file.level = "info";
 
+    // Configure update feed URL for GitHub releases
+    // This will use the publish configuration from electron-builder.yml
+    autoUpdater.setFeedURL({
+      provider: "github",
+      owner: "harsh-simform",
+      repo: "snapflow-desktop",
+      private: false,
+    });
+
+    // Don't check for pre-releases unless explicitly enabled
+    autoUpdater.allowPrerelease = false;
+
     this.setupAutoUpdater();
     this.isInitialized = true;
   }

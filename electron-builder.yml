@@ -114,15 +114,14 @@ linux:
 extraMetadata:
   main: app/background.js
 
-# Auto-update configuration
-# Publishing is handled by GitHub Actions workflow
-publish: never
-# publish:
-#   provider: github
-#   owner: harsh-simform
-#   repo: snapflow-desktop
-#   private: false
-#   releaseType: release
+# Auto-update configuration for electron-updater
+# This enables the app to check for updates from GitHub Releases
+publish:
+  provider: github
+  owner: harsh-simform
+  repo: snapflow-desktop
+  private: false
+  releaseType: release
 
 # Compression
 compression: normal
