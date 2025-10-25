@@ -82,9 +82,22 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
 
+      - name: Delete existing release assets
+        if: github.event_name == 'workflow_dispatch'
+        continue-on-error: true
+        run: |
+          TAG="${{ github.event.inputs.version || github.ref_name }}"
+          gh release view "$TAG" --json assets --jq '.assets[].name' | while read asset; do
+            echo "Deleting $asset..."
+            gh release delete-asset "$TAG" "$asset" -y || true
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.event.inputs.version || github.ref_name }}
           files: |
             **/*.dmg
             **/*.zip
@@ -95,5 +108,7 @@ jobs:
             **/latest*.yml
           draft: true
           generate_release_notes: true
+          fail_on_unmatched_files: false
+          make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
