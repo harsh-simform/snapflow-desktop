@@ -38,6 +38,8 @@ jobs:
       # Run build (same script for all platforms)
       - name: Build App
         run: npm run build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # Upload platform-specific build outputs
       - name: Upload build artifacts
