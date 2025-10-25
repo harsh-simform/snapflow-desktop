@@ -27,7 +27,9 @@ export default function AnnotatePage() {
   const [Text, setText] = useState<any>(null);
   const [Transformer, setTransformer] = useState<any>(null);
 
-  const [tool, setTool] = useState<"select" | "pen" | "arrow" | "rectangle" | "circle" | "text">("select");
+  const [tool, setTool] = useState<
+    "select" | "pen" | "arrow" | "rectangle" | "circle" | "text"
+  >("select");
   const [color, setColor] = useState("#EF4444");
   const [strokeWidth, setStrokeWidth] = useState(3);
   const [fillOpacity, setFillOpacity] = useState(0);
@@ -69,7 +71,7 @@ export default function AnnotatePage() {
         if (result.success && result.data) {
           console.log("[Annotate] Found pending screenshot!", {
             dataUrlLength: result.data.dataUrl?.length || 0,
-            mode: result.data.mode
+            mode: result.data.mode,
           });
           setScreenshot(result.data.dataUrl);
         } else {
@@ -79,7 +81,9 @@ export default function AnnotatePage() {
           // Wait a bit to see if screenshot arrives via IPC
           setTimeout(() => {
             if (!screenshot) {
-              console.warn("[Annotate] No screenshot loaded after timeout, user may need to capture first");
+              console.warn(
+                "[Annotate] No screenshot loaded after timeout, user may need to capture first"
+              );
             }
           }, 2000);
         }
@@ -94,7 +98,7 @@ export default function AnnotatePage() {
       console.log("[Annotate] Screenshot set via direct injection!", {
         hasDataUrl: !!data?.dataUrl,
         dataUrlLength: data?.dataUrl?.length || 0,
-        mode: data?.mode
+        mode: data?.mode,
       });
       setScreenshot(data.dataUrl);
     };
@@ -126,7 +130,7 @@ export default function AnnotatePage() {
       console.log("[Annotate] Screenshot received via IPC event!", {
         hasDataUrl: !!data?.dataUrl,
         dataUrlLength: data?.dataUrl?.length || 0,
-        mode: data?.mode
+        mode: data?.mode,
       });
       setScreenshot(data.dataUrl);
     });
@@ -137,7 +141,8 @@ export default function AnnotatePage() {
 
       // Check if user is typing in an input field or textarea
       const target = e.target as HTMLElement;
-      const isInputField = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
+      const isInputField =
+        target.tagName === "INPUT" || target.tagName === "TEXTAREA";
 
       if (e.key === "Delete" || e.key === "Backspace") {
         // Only prevent default and delete shape if NOT in an input field
@@ -235,7 +240,8 @@ export default function AnnotatePage() {
 
   const handleMouseDown = (e: any) => {
     // Check if clicked on empty area (background)
-    const clickedOnEmpty = e.target === e.target.getStage() || e.target.getClassName() === 'Image';
+    const clickedOnEmpty =
+      e.target === e.target.getStage() || e.target.getClassName() === "Image";
 
     if (clickedOnEmpty && tool === "select") {
       // Deselect when clicking on empty area in select mode
@@ -351,7 +357,8 @@ export default function AnnotatePage() {
       setCurrentShape(updatedShape);
     } else if (tool === "circle" && currentShape.type === "circle") {
       const radius = Math.sqrt(
-        Math.pow(point.x - currentShape.x, 2) + Math.pow(point.y - currentShape.y, 2)
+        Math.pow(point.x - currentShape.x, 2) +
+          Math.pow(point.y - currentShape.y, 2)
       );
       const updatedShape = {
         ...currentShape,
@@ -423,7 +430,9 @@ export default function AnnotatePage() {
     }
 
     if (!currentUser) {
-      console.error("[Annotate] Cannot save - no current user. Redirecting to auth.");
+      console.error(
+        "[Annotate] Cannot save - no current user. Redirecting to auth."
+      );
       toast.error("User not found. Please login again.");
       router.push("/auth");
       return;
@@ -545,27 +554,72 @@ export default function AnnotatePage() {
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center space-x-2 sm:space-x-3 min-w-0">
               <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 rounded-lg sm:rounded-xl flex items-center justify-center flex-shrink-0">
-                <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                <svg
+                  className="w-5 h-5 sm:w-6 sm:h-6 text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                  />
                 </svg>
               </div>
               <div className="min-w-0">
-                <h1 className="text-base sm:text-xl font-bold text-gray-100 truncate">Annotate Screenshot</h1>
-                <p className="hidden sm:block text-xs text-gray-400">Add annotations, shapes, and text to your capture</p>
+                <h1 className="text-base sm:text-xl font-bold text-gray-100 truncate">
+                  Annotate Screenshot
+                </h1>
+                <p className="hidden sm:block text-xs text-gray-400">
+                  Add annotations, shapes, and text to your capture
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-              <Button variant="ghost" onClick={handleCancel} className="h-9 sm:h-10 px-3 sm:px-4">
-                <svg className="w-4 h-4 sm:mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <Button
+                variant="ghost"
+                onClick={handleCancel}
+                className="h-9 sm:h-10 px-3 sm:px-4"
+              >
+                <svg
+                  className="w-4 h-4 sm:mr-2"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
                 </svg>
                 <span className="hidden sm:inline">Cancel</span>
               </Button>
-              <Button variant="primary" onClick={handleSave} disabled={saving} className="h-9 sm:h-10 px-3 sm:px-6">
-                <svg className="w-4 h-4 sm:mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              <Button
+                variant="primary"
+                onClick={handleSave}
+                disabled={saving}
+                className="h-9 sm:h-10 px-3 sm:px-6"
+              >
+                <svg
+                  className="w-4 h-4 sm:mr-2"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M5 13l4 4L19 7"
+                  />
                 </svg>
-                <span className="hidden sm:inline">{saving ? "Saving..." : "Save Screenshot"}</span>
+                <span className="hidden sm:inline">
+                  {saving ? "Saving..." : "Save Screenshot"}
+                </span>
                 <span className="sm:hidden">{saving ? "..." : "Save"}</span>
               </Button>
             </div>
@@ -577,7 +631,9 @@ export default function AnnotatePage() {
           <div className="flex items-center gap-3 sm:gap-4 min-w-max">
             {/* Colors Section */}
             <div className="flex items-center gap-2 flex-shrink-0">
-              <label className="text-xs font-semibold text-gray-400 hidden sm:block">Colors:</label>
+              <label className="text-xs font-semibold text-gray-400 hidden sm:block">
+                Colors:
+              </label>
               <div className="flex items-center gap-1 sm:gap-1.5 bg-gray-900 rounded-lg p-1.5 border border-gray-800">
                 {colorPresets.slice(0, 6).map((preset) => (
                   <button
@@ -617,8 +673,18 @@ export default function AnnotatePage() {
                     title="Custom color"
                   />
                   <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 sm:w-3.5 sm:h-3.5 bg-gray-800 rounded-full flex items-center justify-center border border-gray-700">
-                    <svg className="w-1.5 h-1.5 sm:w-2 sm:h-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" />
+                    <svg
+                      className="w-1.5 h-1.5 sm:w-2 sm:h-2 text-gray-400"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={3}
+                        d="M12 4v16m8-8H4"
+                      />
                     </svg>
                   </div>
                 </div>
@@ -629,11 +695,15 @@ export default function AnnotatePage() {
 
             {/* Properties Section */}
             <div className="flex flex-col gap-1 flex-shrink-0">
-              <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider hidden sm:block">Properties</label>
+              <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider hidden sm:block">
+                Properties
+              </label>
               <div className="flex items-center gap-1.5 sm:gap-2 bg-gray-900 rounded-lg p-1.5 sm:p-2 border border-gray-800">
                 {/* Width */}
                 <div className="flex flex-col gap-0.5">
-                  <span className="text-[10px] text-gray-500 font-medium hidden sm:block">Width</span>
+                  <span className="text-[10px] text-gray-500 font-medium hidden sm:block">
+                    Width
+                  </span>
                   <select
                     value={strokeWidth}
                     onChange={(e) => setStrokeWidth(Number(e.target.value))}
@@ -652,7 +722,9 @@ export default function AnnotatePage() {
                   <>
                     <div className="w-px h-10 bg-gray-800" />
                     <div className="flex flex-col gap-0.5">
-                      <span className="text-[10px] text-gray-500 font-medium hidden sm:block">Fill</span>
+                      <span className="text-[10px] text-gray-500 font-medium hidden sm:block">
+                        Fill
+                      </span>
                       <select
                         value={fillOpacity}
                         onChange={(e) => setFillOpacity(Number(e.target.value))}
@@ -673,7 +745,9 @@ export default function AnnotatePage() {
 
             {/* Actions Section */}
             <div className="flex flex-col gap-1 flex-shrink-0">
-              <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider hidden sm:block">Actions</label>
+              <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider hidden sm:block">
+                Actions
+              </label>
               <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-1 border border-gray-800">
                 <Button
                   variant="ghost"
@@ -682,8 +756,18 @@ export default function AnnotatePage() {
                   title="Undo last action (Ctrl+Z)"
                   className="h-10 sm:h-12 px-2 sm:px-3 flex-col gap-0.5"
                 >
-                  <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                  <svg
+                    className="w-4 h-4 sm:w-5 sm:h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"
+                    />
                   </svg>
                   <span className="text-[10px] sm:text-xs">Undo</span>
                 </Button>
@@ -694,8 +778,18 @@ export default function AnnotatePage() {
                   title="Delete selected shape (Del)"
                   className="h-10 sm:h-12 px-2 sm:px-3 flex-col gap-0.5"
                 >
-                  <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  <svg
+                    className="w-4 h-4 sm:w-5 sm:h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                    />
                   </svg>
                   <span className="text-[10px] sm:text-xs">Delete</span>
                 </Button>
@@ -706,8 +800,18 @@ export default function AnnotatePage() {
                   title="Clear all annotations"
                   className="h-10 sm:h-12 px-2 sm:px-3 flex-col gap-0.5 hover:bg-red-500/10 hover:text-red-400"
                 >
-                  <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  <svg
+                    className="w-4 h-4 sm:w-5 sm:h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M6 18L18 6M6 6l12 12"
+                    />
                   </svg>
                   <span className="text-[10px] sm:text-xs">Clear</span>
                 </Button>
@@ -730,10 +834,22 @@ export default function AnnotatePage() {
                 }`}
                 title="Select and move shapes"
               >
-                <svg className="w-5 h-5 sm:w-6 sm:h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5" />
+                <svg
+                  className="w-5 h-5 sm:w-6 sm:h-6 mb-1"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5"
+                  />
                 </svg>
-                <span className="text-[9px] sm:text-[10px] font-medium">Select</span>
+                <span className="text-[9px] sm:text-[10px] font-medium">
+                  Select
+                </span>
               </button>
               <button
                 onClick={() => setTool("pen")}
@@ -744,10 +860,22 @@ export default function AnnotatePage() {
                 }`}
                 title="Draw freehand"
               >
-                <svg className="w-5 h-5 sm:w-6 sm:h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                <svg
+                  className="w-5 h-5 sm:w-6 sm:h-6 mb-1"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                  />
                 </svg>
-                <span className="text-[9px] sm:text-[10px] font-medium">Pen</span>
+                <span className="text-[9px] sm:text-[10px] font-medium">
+                  Pen
+                </span>
               </button>
               <button
                 onClick={() => setTool("arrow")}
@@ -758,10 +886,22 @@ export default function AnnotatePage() {
                 }`}
                 title="Draw arrow"
               >
-                <svg className="w-5 h-5 sm:w-6 sm:h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                <svg
+                  className="w-5 h-5 sm:w-6 sm:h-6 mb-1"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M14 5l7 7m0 0l-7 7m7-7H3"
+                  />
                 </svg>
-                <span className="text-[9px] sm:text-[10px] font-medium">Arrow</span>
+                <span className="text-[9px] sm:text-[10px] font-medium">
+                  Arrow
+                </span>
               </button>
               <button
                 onClick={() => setTool("rectangle")}
@@ -772,10 +912,25 @@ export default function AnnotatePage() {
                 }`}
                 title="Draw rectangle"
               >
-                <svg className="w-5 h-5 sm:w-6 sm:h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <rect x="4" y="4" width="16" height="16" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                <svg
+                  className="w-5 h-5 sm:w-6 sm:h-6 mb-1"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <rect
+                    x="4"
+                    y="4"
+                    width="16"
+                    height="16"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
                 </svg>
-                <span className="text-[9px] sm:text-[10px] font-medium">Box</span>
+                <span className="text-[9px] sm:text-[10px] font-medium">
+                  Box
+                </span>
               </button>
               <button
                 onClick={() => setTool("circle")}
@@ -786,10 +941,24 @@ export default function AnnotatePage() {
                 }`}
                 title="Draw circle"
               >
-                <svg className="w-5 h-5 sm:w-6 sm:h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <circle cx="12" cy="12" r="9" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                <svg
+                  className="w-5 h-5 sm:w-6 sm:h-6 mb-1"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="9"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
                 </svg>
-                <span className="text-[9px] sm:text-[10px] font-medium">Circle</span>
+                <span className="text-[9px] sm:text-[10px] font-medium">
+                  Circle
+                </span>
               </button>
               <button
                 onClick={() => setTool("text")}
@@ -800,74 +969,110 @@ export default function AnnotatePage() {
                 }`}
                 title="Add text"
               >
-                <svg className="w-5 h-5 sm:w-6 sm:h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7h16M12 7v13m-4 0h8" />
+                <svg
+                  className="w-5 h-5 sm:w-6 sm:h-6 mb-1"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 7h16M12 7v13m-4 0h8"
+                  />
                 </svg>
-                <span className="text-[9px] sm:text-[10px] font-medium">Text</span>
+                <span className="text-[9px] sm:text-[10px] font-medium">
+                  Text
+                </span>
               </button>
             </div>
           </div>
 
           {/* Canvas Area */}
-          <div className="flex-1 overflow-hidden bg-gray-950" ref={containerRef}>
+          <div
+            className="flex-1 overflow-hidden bg-gray-950"
+            ref={containerRef}
+          >
             <div className="w-full h-full flex items-center justify-center p-2 sm:p-4">
-            {screenshot && Stage && Layer && image ? (
-              <div className="shadow-2xl">
-                <Stage
-                  ref={stageRef}
-                  width={dimensions.width}
-                  height={dimensions.height}
-                  onMouseDown={handleMouseDown}
-                  onMouseMove={handleMouseMove}
-                  onMouseUp={handleMouseUp}
-                  onTouchStart={handleMouseDown}
-                  onTouchMove={handleMouseMove}
-                  onTouchEnd={handleMouseUp}
-                  className="border border-gray-800 rounded-lg"
-                >
-                  <Layer>
-                    {KonvaImage && (
-                      <KonvaImage
-                        image={image}
-                        width={dimensions.width}
-                        height={dimensions.height}
-                      />
-                    )}
+              {screenshot && Stage && Layer && image ? (
+                <div className="shadow-2xl">
+                  <Stage
+                    ref={stageRef}
+                    width={dimensions.width}
+                    height={dimensions.height}
+                    onMouseDown={handleMouseDown}
+                    onMouseMove={handleMouseMove}
+                    onMouseUp={handleMouseUp}
+                    onTouchStart={handleMouseDown}
+                    onTouchMove={handleMouseMove}
+                    onTouchEnd={handleMouseUp}
+                    className="border border-gray-800 rounded-lg"
+                  >
+                    <Layer>
+                      {KonvaImage && (
+                        <KonvaImage
+                          image={image}
+                          width={dimensions.width}
+                          height={dimensions.height}
+                        />
+                      )}
 
-                    {shapes.map((shape) => renderShape(shape))}
-                    {currentShape && renderShape(currentShape)}
+                      {shapes.map((shape) => renderShape(shape))}
+                      {currentShape && renderShape(currentShape)}
 
-                    {Transformer && selectedId && tool === "select" && (
-                      <Transformer
-                        ref={(node: any) => {
-                          if (node) {
-                            const stage = node.getStage();
-                            const selectedNode = stage.findOne(`#${selectedId}`);
-                            if (selectedNode) {
-                              node.nodes([selectedNode]);
-                              node.getLayer().batchDraw();
+                      {Transformer && selectedId && tool === "select" && (
+                        <Transformer
+                          ref={(node: any) => {
+                            if (node) {
+                              const stage = node.getStage();
+                              const selectedNode = stage.findOne(
+                                `#${selectedId}`
+                              );
+                              if (selectedNode) {
+                                node.nodes([selectedNode]);
+                                node.getLayer().batchDraw();
+                              }
                             }
-                          }
-                        }}
-                      />
-                    )}
-                  </Layer>
-                </Stage>
-              </div>
-            ) : (
-              <div className="bg-gray-900 border border-gray-800 rounded-lg p-12 text-center">
-                <div className="flex flex-col items-center space-y-3">
-                  <div className="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center">
-                    <svg className="w-8 h-8 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                  </div>
-                  <p className="text-gray-400 font-medium">Waiting for screenshot...</p>
-                  <p className="text-gray-600 text-sm">Capture a screenshot to start annotating</p>
+                          }}
+                        />
+                      )}
+                    </Layer>
+                  </Stage>
                 </div>
-              </div>
-            )}
+              ) : (
+                <div className="bg-gray-900 border border-gray-800 rounded-lg p-12 text-center">
+                  <div className="flex flex-col items-center space-y-3">
+                    <div className="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center">
+                      <svg
+                        className="w-8 h-8 text-gray-600"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
+                        />
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"
+                        />
+                      </svg>
+                    </div>
+                    <p className="text-gray-400 font-medium">
+                      Waiting for screenshot...
+                    </p>
+                    <p className="text-gray-600 text-sm">
+                      Capture a screenshot to start annotating
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -900,7 +1105,9 @@ export default function AnnotatePage() {
         {editingTextId && (
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 backdrop-blur-sm">
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 w-96 shadow-2xl">
-              <h3 className="text-lg font-semibold text-gray-100 mb-4">Edit Text</h3>
+              <h3 className="text-lg font-semibold text-gray-100 mb-4">
+                Edit Text
+              </h3>
               <Input
                 type="text"
                 value={editingTextValue}
@@ -917,10 +1124,18 @@ export default function AnnotatePage() {
                 }}
               />
               <div className="flex justify-end gap-2">
-                <Button variant="ghost" size="sm" onClick={handleTextEditCancel}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleTextEditCancel}
+                >
                   Cancel
                 </Button>
-                <Button variant="primary" size="sm" onClick={handleTextEditSave}>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={handleTextEditSave}
+                >
                   Save
                 </Button>
               </div>

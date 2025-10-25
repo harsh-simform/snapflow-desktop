@@ -11,12 +11,26 @@ interface SelectionBounds {
 export default function AreaCapture() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isSelecting, setIsSelecting] = useState(false);
-  const [startPos, setStartPos] = useState<{ x: number; y: number } | null>(null);
-  const [currentPos, setCurrentPos] = useState<{ x: number; y: number } | null>(null);
+  const [startPos, setStartPos] = useState<{ x: number; y: number } | null>(
+    null
+  );
+  const [currentPos, setCurrentPos] = useState<{ x: number; y: number } | null>(
+    null
+  );
   const [selection, setSelection] = useState<SelectionBounds | null>(null);
   const [scaleFactor, setScaleFactor] = useState(1);
-  const [displayBounds, setDisplayBounds] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
-  const [overlayBounds, setOverlayBounds] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const [displayBounds, setDisplayBounds] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const [overlayBounds, setOverlayBounds] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
 
   useEffect(() => {
     // Listen for area capture ready event
@@ -139,7 +153,8 @@ export default function AreaCapture() {
         <title>Select Area - SnapFlow</title>
       </Head>
       <style jsx global>{`
-        html, body {
+        html,
+        body {
           background-color: transparent !important;
           margin: 0 !important;
           padding: 0 !important;
@@ -184,7 +199,7 @@ export default function AreaCapture() {
               className="absolute bg-transparent pointer-events-none"
               style={{
                 ...selectionStyle,
-                boxShadow: '0 0 0 2px #3b82f6 inset',
+                boxShadow: "0 0 0 2px #3b82f6 inset",
               }}
             />
 
@@ -211,7 +226,6 @@ export default function AreaCapture() {
                 />
               </svg>
             </div>
-
           </>
         )}
       </div>

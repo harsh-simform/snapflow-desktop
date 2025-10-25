@@ -20,7 +20,9 @@ export class AuthService {
   ): Promise<User> {
     const supabase = getSupabase();
     if (!supabase) {
-      throw new Error("Supabase is not configured. Please check your environment variables.");
+      throw new Error(
+        "Supabase is not configured. Please check your environment variables."
+      );
     }
 
     // Sign up user with Supabase Auth
@@ -54,7 +56,9 @@ export class AuthService {
   async login(email: string, password: string): Promise<User> {
     const supabase = getSupabase();
     if (!supabase) {
-      throw new Error("Supabase is not configured. Please check your environment variables.");
+      throw new Error(
+        "Supabase is not configured. Please check your environment variables."
+      );
     }
 
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -102,7 +106,9 @@ export class AuthService {
     }
 
     // Get current session user
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
     if (user && user.email === email) {
       return this.mapSupabaseUser(user);
@@ -120,7 +126,10 @@ export class AuthService {
       return null;
     }
 
-    const { data: { user }, error } = await supabase.auth.getUser();
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser();
 
     if (error || !user) {
       return null;
@@ -139,7 +148,9 @@ export class AuthService {
       return false;
     }
 
-    const { data: { session } } = await supabase.auth.getSession();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
     return session !== null;
   }
 
@@ -152,7 +163,9 @@ export class AuthService {
   ): Promise<User> {
     const supabase = getSupabase();
     if (!supabase) {
-      throw new Error("Supabase is not configured. Please check your environment variables.");
+      throw new Error(
+        "Supabase is not configured. Please check your environment variables."
+      );
     }
 
     const updateData: any = {};
@@ -191,11 +204,15 @@ export class AuthService {
   ): Promise<void> {
     const supabase = getSupabase();
     if (!supabase) {
-      throw new Error("Supabase is not configured. Please check your environment variables.");
+      throw new Error(
+        "Supabase is not configured. Please check your environment variables."
+      );
     }
 
     // First, verify current password by attempting to sign in
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
     if (!user) {
       throw new Error("User not found");
@@ -227,7 +244,9 @@ export class AuthService {
   async deleteUser(userId: string): Promise<void> {
     const supabase = getSupabase();
     if (!supabase) {
-      throw new Error("Supabase is not configured. Please check your environment variables.");
+      throw new Error(
+        "Supabase is not configured. Please check your environment variables."
+      );
     }
 
     // Supabase doesn't have a direct client method to delete user
@@ -238,7 +257,9 @@ export class AuthService {
     // Note: To fully delete a user, you would need to:
     // 1. Create a Supabase Edge Function
     // 2. Call supabase.auth.admin.deleteUser(userId) from that function
-    console.warn("User deletion requires Supabase Edge Function. User signed out instead.");
+    console.warn(
+      "User deletion requires Supabase Edge Function. User signed out instead."
+    );
   }
 
   /**
@@ -265,7 +286,10 @@ export class AuthService {
       return null;
     }
 
-    const { data: { session }, error } = await supabase.auth.getSession();
+    const {
+      data: { session },
+      error,
+    } = await supabase.auth.getSession();
     return session;
   }
 
@@ -275,7 +299,9 @@ export class AuthService {
   async setSession(accessToken: string, refreshToken: string) {
     const supabase = getSupabase();
     if (!supabase) {
-      throw new Error("Supabase is not configured. Please check your environment variables.");
+      throw new Error(
+        "Supabase is not configured. Please check your environment variables."
+      );
     }
 
     const { data, error } = await supabase.auth.setSession({
@@ -296,7 +322,10 @@ export class AuthService {
   private mapSupabaseUser(supabaseUser: SupabaseUser): User {
     return {
       id: supabaseUser.id,
-      name: supabaseUser.user_metadata?.name || supabaseUser.email?.split("@")[0] || "User",
+      name:
+        supabaseUser.user_metadata?.name ||
+        supabaseUser.email?.split("@")[0] ||
+        "User",
       email: supabaseUser.email!,
       createdAt: new Date(supabaseUser.created_at),
       updatedAt: new Date(supabaseUser.updated_at || supabaseUser.created_at),
