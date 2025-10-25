@@ -1,6 +1,7 @@
 appId: com.snapflow.desktop
 productName: SnapFlow
 copyright: Copyright © 2025 SnapFlow Team
+appVersion: 1.0.0
 directories:
   output: dist
   buildResources: resources
@@ -78,8 +79,6 @@ win:
         - x64
   publisherName: SnapFlow Team
   verifyUpdateCodeSignature: false
-  fileVersion: 1.0.0.0
-  productVersion: 1.0.0.0
 
 nsis:
   oneClick: false
@@ -89,6 +88,9 @@ nsis:
   shortcutName: SnapFlow
   perMachine: false
   deleteAppDataOnUninstall: false
+  displayLanguageSelector: false
+  installerIcon: resources/icon.ico
+  uninstallerIcon: resources/icon.ico
 
 linux:
   icon: resources/icon.png
