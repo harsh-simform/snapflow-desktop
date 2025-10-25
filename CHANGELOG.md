@@ -5,6 +5,32 @@ All notable changes to SnapFlow Desktop will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2025-10-25
+
+### Added
+
+- Comprehensive auto-updater troubleshooting guide
+- Documentation for GitHub Actions environment variable configuration
+
+### Changed
+
+- GitHub Actions workflow now creates published releases instead of drafts
+- Releases are now automatically published for auto-updater compatibility
+- Auth page layout improved to prevent scrolling
+- Removed SnapFlow branding header from auth page for cleaner UI
+
+### Fixed
+
+- Auto-updater not detecting new versions (releases were drafts)
+- Auth page scroll issue
+- GitHub Actions .env configuration for Supabase integration
+
+### Technical Improvements
+
+- Added prerelease flag configuration in release workflow
+- Created detailed auto-updater troubleshooting documentation
+- Added GitHub secrets setup guide for CI/CD
+
 ## [1.0.1] - 2025-10-25
 
 ### Added
