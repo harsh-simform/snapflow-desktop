@@ -1,7 +1,6 @@
 appId: com.snapflow.desktop
 productName: SnapFlow
 copyright: Copyright © 2025 SnapFlow Team
-appVersion: 1.0.0
 directories:
   output: dist
   buildResources: resources
