@@ -24,6 +24,7 @@ const {
   dialog,
   shell,
   screen,
+  globalShortcut,
 } = electron;
 
 // Determine if we're in production
@@ -205,6 +206,59 @@ function createSystemTray() {
   tray.setToolTip("SnapFlow");
 }
 
+function registerGlobalShortcuts() {
+  // Register Cmd+Shift+5 (macOS) / Ctrl+Shift+5 (Windows/Linux) for Capture Area
+  const captureAreaShortcut =
+    process.platform === "darwin" ? "Command+Shift+5" : "Control+Shift+5";
+
+  const areaRegistered = globalShortcut.register(
+    captureAreaShortcut,
+    async () => {
+      console.log(`[Shortcuts] ${captureAreaShortcut} pressed - Capture Area`);
+      await handleScreenshotCapture("region");
+    }
+  );
+
+  if (areaRegistered) {
+    console.log(
+      `[Shortcuts] Successfully registered ${captureAreaShortcut} for Capture Area`
+    );
+  } else {
+    console.error(`[Shortcuts] Failed to register ${captureAreaShortcut}`);
+  }
+
+  // Register Cmd+Shift+3 (macOS) / Ctrl+Shift+3 (Windows/Linux) for Capture Full Screen
+  const captureFullScreenShortcut =
+    process.platform === "darwin" ? "Command+Shift+3" : "Control+Shift+3";
+
+  const fullScreenRegistered = globalShortcut.register(
+    captureFullScreenShortcut,
+    async () => {
+      console.log(
+        `[Shortcuts] ${captureFullScreenShortcut} pressed - Capture Full Screen`
+      );
+      await handleScreenshotCapture("fullscreen");
+    }
+  );
+
+  if (fullScreenRegistered) {
+    console.log(
+      `[Shortcuts] Successfully registered ${captureFullScreenShortcut} for Capture Full Screen`
+    );
+  } else {
+    console.error(
+      `[Shortcuts] Failed to register ${captureFullScreenShortcut}`
+    );
+  }
+
+  // Log registered shortcuts
+  console.log(
+    "[Shortcuts] All registered shortcuts:",
+    globalShortcut.isRegistered(captureAreaShortcut),
+    globalShortcut.isRegistered(captureFullScreenShortcut)
+  );
+}
+
 function updateTrayMenu() {
   if (!tray) return;
 
@@ -216,12 +270,16 @@ function updateTrayMenu() {
   const captureMenuItems: electron.MenuItemConstructorOptions[] = [
     {
       label: "Capture Full Screen",
+      accelerator:
+        process.platform === "darwin" ? "Command+Shift+3" : "Control+Shift+3",
       click: () => {
         handleScreenshotCapture("fullscreen");
       },
     },
     {
       label: "Capture Area",
+      accelerator:
+        process.platform === "darwin" ? "Command+Shift+5" : "Control+Shift+5",
       click: () => {
         handleScreenshotCapture("region");
       },
@@ -821,6 +879,70 @@ if (app && app.requestSingleInstanceLock) {
       // Initialize storage
       await storageManager.ensureDirectories();
 
+      // Set custom application menu (remove File and Help)
+      if (process.platform === "darwin") {
+        const template: electron.MenuItemConstructorOptions[] = [
+          {
+            label: app.name,
+            submenu: [
+              { role: "about" },
+              { type: "separator" },
+              { role: "services" },
+              { type: "separator" },
+              { role: "hide" },
+              { role: "hideOthers" },
+              { role: "unhide" },
+              { type: "separator" },
+              { role: "quit" },
+            ],
+          },
+          {
+            label: "Edit",
+            submenu: [
+              { role: "undo" },
+              { role: "redo" },
+              { type: "separator" },
+              { role: "cut" },
+              { role: "copy" },
+              { role: "paste" },
+              { role: "pasteAndMatchStyle" },
+              { role: "delete" },
+              { role: "selectAll" },
+            ],
+          },
+          {
+            label: "View",
+            submenu: [
+              { role: "reload" },
+              { role: "forceReload" },
+              { role: "toggleDevTools" },
+              { type: "separator" },
+              { role: "resetZoom" },
+              { role: "zoomIn" },
+              { role: "zoomOut" },
+              { type: "separator" },
+              { role: "togglefullscreen" },
+            ],
+          },
+          {
+            label: "Window",
+            submenu: [
+              { role: "minimize" },
+              { role: "zoom" },
+              { type: "separator" },
+              { role: "front" },
+              { type: "separator" },
+              { role: "window" },
+            ],
+          },
+        ];
+        const menu = Menu.buildFromTemplate(template);
+        Menu.setApplicationMenu(menu);
+      } else {
+        // On Windows/Linux, remove the menu bar entirely
+        Menu.setApplicationMenu(null);
+      }
+
       // Create main window
       await createMainWindow();
 
@@ -829,6 +951,9 @@ if (app && app.requestSingleInstanceLock) {
 
       // Create system tray
       createSystemTray();
+
+      // Register global keyboard shortcuts
+      registerGlobalShortcuts();
 
       // Listen for display changes to update tray menu
       screen.on("display-added", () => {
@@ -863,6 +988,12 @@ if (app && app.requestSingleInstanceLock) {
 if (app && app.on) {
   app.on("window-all-closed", () => {
     // Do nothing, keep app running in tray
+  });
+
+  // Unregister all shortcuts before quit
+  app.on("will-quit", () => {
+    console.log("[Shortcuts] Unregistering all global shortcuts");
+    globalShortcut.unregisterAll();
   });
 }
 

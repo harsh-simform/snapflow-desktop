@@ -4,6 +4,7 @@ import { useRouter } from "next/router";
 import { toast } from "sonner";
 import { Button } from "../components/ui/Button";
 import { Input } from "../components/ui/Input";
+import { WindowControls } from "../components/ui/WindowControls";
 
 export default function AnnotatePage() {
   const router = useRouter();
@@ -174,6 +175,7 @@ export default function AnnotatePage() {
     };
   }, [editingTextId, selectedId, shapes]);
 
+  // Load image when screenshot changes
   useEffect(() => {
     if (!screenshot) return;
 
@@ -182,10 +184,17 @@ export default function AnnotatePage() {
       setImage(img);
 
       // Calculate dimensions to fit viewport
+      // Account for: titlebar (36px), header (56-64px), toolbar (~100-120px), bottom panel (~52-64px)
+      // Plus padding and borders
       const containerWidth = containerRef.current?.clientWidth || 1200;
       const containerHeight = containerRef.current?.clientHeight || 800;
-      const maxWidth = containerWidth - 48;
-      const maxHeight = containerHeight - 48;
+
+      // More conservative padding to ensure screenshot fits well
+      const paddingX = 64; // horizontal padding
+      const paddingY = 64; // vertical padding
+
+      const maxWidth = Math.max(containerWidth - paddingX, 400);
+      const maxHeight = Math.max(containerHeight - paddingY, 300);
 
       // Account for device pixel ratio - the image is captured at native resolution
       // but should be displayed at CSS pixel dimensions
@@ -201,6 +210,8 @@ export default function AnnotatePage() {
         cssHeight,
         containerWidth,
         containerHeight,
+        maxWidth,
+        maxHeight,
       });
 
       const scaleX = maxWidth / cssWidth;
@@ -216,12 +227,49 @@ export default function AnnotatePage() {
       });
 
       setDimensions({
-        width: cssWidth * scale,
-        height: cssHeight * scale,
+        width: Math.floor(cssWidth * scale),
+        height: Math.floor(cssHeight * scale),
       });
     };
     img.src = screenshot;
   }, [screenshot]);
+
+  // Handle window resize separately
+  useEffect(() => {
+    if (!image) return;
+
+    const handleResize = () => {
+      if (!containerRef.current) return;
+
+      const containerWidth = containerRef.current.clientWidth;
+      const containerHeight = containerRef.current.clientHeight;
+
+      const paddingX = 64;
+      const paddingY = 64;
+
+      const maxWidth = Math.max(containerWidth - paddingX, 400);
+      const maxHeight = Math.max(containerHeight - paddingY, 300);
+
+      const devicePixelRatio = window.devicePixelRatio || 1;
+      const cssWidth = image.width / devicePixelRatio;
+      const cssHeight = image.height / devicePixelRatio;
+
+      const scaleX = maxWidth / cssWidth;
+      const scaleY = maxHeight / cssHeight;
+      const scale = Math.min(scaleX, scaleY, 1);
+
+      setDimensions({
+        width: Math.floor(cssWidth * scale),
+        height: Math.floor(cssHeight * scale),
+      });
+    };
+
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [image]);
 
   const loadUser = async () => {
     try {
@@ -549,6 +597,18 @@ export default function AnnotatePage() {
         <title>Annotate Screenshot - SnapFlow</title>
       </Head>
       <div className="h-screen bg-gray-950 flex flex-col overflow-hidden">
+        {/* Titlebar with Window Controls - Draggable */}
+        <div
+          className="glass-strong border-b border-white/5 flex-shrink-0"
+          style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+        >
+          <div className="flex items-center justify-end h-9 pl-4">
+            <div style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+              <WindowControls />
+            </div>
+          </div>
+        </div>
+
         {/* Top Header */}
         <div className="bg-gray-900 border-b border-gray-800 px-3 sm:px-6 py-3 flex-shrink-0">
           <div className="flex items-center justify-between gap-2">
@@ -994,9 +1054,9 @@ export default function AnnotatePage() {
             className="flex-1 overflow-hidden bg-gray-950"
             ref={containerRef}
           >
-            <div className="w-full h-full flex items-center justify-center p-2 sm:p-4">
+            <div className="w-full h-full flex items-center justify-center p-3 sm:p-6">
               {screenshot && Stage && Layer && image ? (
-                <div className="shadow-2xl">
+                <div className="shadow-2xl rounded-lg overflow-hidden">
                   <Stage
                     ref={stageRef}
                     width={dimensions.width}

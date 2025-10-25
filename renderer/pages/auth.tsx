@@ -125,15 +125,20 @@ export default function AuthPage() {
         <title>{isLogin ? "Login" : "Sign Up"} - SnapFlow</title>
       </Head>
       <div className="min-h-screen bg-gray-950">
-        {/* Titlebar with Window Controls */}
-        <div className="glass-strong border-b border-white/5 sticky top-0 z-20 backdrop-blur-xl">
-          <div className="flex items-center justify-end h-8 px-4">
-            <WindowControls />
+        {/* Titlebar with Window Controls - Draggable */}
+        <div
+          className="glass-strong border-b border-white/5 sticky top-0 z-20 backdrop-blur-xl"
+          style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+        >
+          <div className="flex items-center justify-end h-9 pl-4">
+            <div style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+              <WindowControls />
+            </div>
           </div>
         </div>
 
         {/* Header/Navbar */}
-        <header className="glass-strong border-b border-white/10 sticky top-8 z-10 backdrop-blur-xl">
+        <header className="glass-strong border-b border-white/10 sticky top-9 z-10 backdrop-blur-xl">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
