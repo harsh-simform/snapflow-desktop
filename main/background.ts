@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 import path from "path";
 import electron from "electron";
 import serve from "electron-serve";
-import { createWindow } from "./helpers";
+import { createWindow, WindowInstance } from "./helpers";
 import { authService } from "./services/auth";
 import { issueService } from "./services/issues";
 import { captureService } from "./services/capture";
@@ -77,11 +77,12 @@ if (protocol && protocol.registerSchemesAsPrivileged) {
 }
 
 // Global state
-let mainWindow: typeof BrowserWindow.prototype | null = null;
+let mainWindow: WindowInstance | null = null;
 let windowCaptureOverlay: typeof BrowserWindow.prototype | null = null;
 let recordingControlWindow: typeof BrowserWindow.prototype | null = null;
 let recordingAreaSelector: typeof BrowserWindow.prototype | null = null;
 let tray: typeof Tray.prototype | null = null;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 let isQuitting = false;
 let pendingScreenshot: { dataUrl: string; mode: string } | null = null;
 
@@ -96,12 +97,18 @@ if (isProd) {
   process.on("SIGTERM", () => {
     console.log("SIGTERM received, quitting app...");
     isQuitting = true;
+    if (mainWindow && mainWindow.setQuitting) {
+      mainWindow.setQuitting(true);
+    }
     if (app) app.quit();
   });
 
   process.on("SIGINT", () => {
     console.log("SIGINT received, quitting app...");
     isQuitting = true;
+    if (mainWindow && mainWindow.setQuitting) {
+      mainWindow.setQuitting(true);
+    }
     if (app) app.quit();
   });
 
@@ -109,6 +116,9 @@ if (isProd) {
   process.on("disconnect", () => {
     console.log("Parent process disconnected, quitting app...");
     isQuitting = true;
+    if (mainWindow && mainWindow.setQuitting) {
+      mainWindow.setQuitting(true);
+    }
     if (app) app.quit();
   });
 }
@@ -119,18 +129,22 @@ async function createMainWindow() {
     ? path.join(process.resourcesPath, "icon.png")
     : path.join(__dirname, "../resources/icon.png");
 
-  mainWindow = createWindow("main", {
-    width: 1200,
-    height: 800,
-    icon: iconPath,
-    frame: false,
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      webSecurity: true,
+  mainWindow = createWindow(
+    "main",
+    {
+      width: 1200,
+      height: 800,
+      icon: iconPath,
+      frame: false,
+      webPreferences: {
+        preload: path.join(__dirname, "preload.js"),
+        contextIsolation: true,
+        nodeIntegration: false,
+        webSecurity: true,
+      },
     },
-  });
+    true // Enable preventClose for tray-based application
+  );
 
   // Check if user is already logged in (session exists)
   const currentUser = sessionManager.getUser();
@@ -155,14 +169,6 @@ async function createMainWindow() {
     await mainWindow.loadURL(`http://localhost:${port}${route}`);
     mainWindow.webContents.openDevTools();
   }
-
-  // Prevent window from closing, just hide it
-  mainWindow.on("close", (event) => {
-    if (!isQuitting) {
-      event.preventDefault();
-      mainWindow?.hide();
-    }
-  });
 
   return mainWindow;
 }
@@ -259,8 +265,8 @@ function updateTrayMenu() {
     // { type: "separator" },
     {
       label: "View My Snaps",
-      click: () => {
-        mainWindow?.show();
+      click: async () => {
+        await showMainWindow();
         mainWindow?.webContents.send("navigate", "/home");
       },
     },
@@ -276,12 +282,29 @@ function updateTrayMenu() {
       label: "Quit",
       click: () => {
         isQuitting = true;
+        if (mainWindow && mainWindow.setQuitting) {
+          mainWindow.setQuitting(true);
+        }
         app.quit();
       },
     },
   ]);
 
   tray.setContextMenu(contextMenu);
+}
+
+async function showMainWindow() {
+  // Check if window exists and is not destroyed
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    console.log("[App] Main window destroyed, recreating...");
+    await createMainWindow();
+  } else {
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.show();
+    mainWindow.focus();
+  }
 }
 
 async function createWindowCaptureOverlay() {
@@ -744,15 +767,9 @@ if (app && app.requestSingleInstanceLock) {
     app.quit();
   } else {
     // Handle second instance attempt - focus the existing window
-    app.on("second-instance", () => {
+    app.on("second-instance", async () => {
       // Someone tried to run a second instance, we should focus our window
-      if (mainWindow) {
-        if (mainWindow.isMinimized()) {
-          mainWindow.restore();
-        }
-        mainWindow.show();
-        mainWindow.focus();
-      }
+      await showMainWindow();
     });
 
     (async () => {
@@ -1602,11 +1619,14 @@ function setupIPCHandlers() {
   // App control handlers
   ipcMain.handle("app:quit", () => {
     isQuitting = true;
+    if (mainWindow && mainWindow.setQuitting) {
+      mainWindow.setQuitting(true);
+    }
     app.quit();
   });
 
-  ipcMain.handle("app:show-window", () => {
-    mainWindow?.show();
+  ipcMain.handle("app:show-window", async () => {
+    await showMainWindow();
   });
 
   ipcMain.handle("app:hide-window", () => {
@@ -1617,6 +1637,9 @@ function setupIPCHandlers() {
   ipcMain.handle("window:close", () => {
     if (mainWindow) {
       isQuitting = true;
+      if (mainWindow.setQuitting) {
+        mainWindow.setQuitting(true);
+      }
       mainWindow.close();
     }
   });
@@ -1767,13 +1790,17 @@ if (app && app.on) {
   app.on("before-quit", () => {
     console.log("[App] before-quit event - setting isQuitting to true");
     isQuitting = true;
+    // Also notify the main window that we're quitting
+    if (mainWindow && mainWindow.setQuitting) {
+      mainWindow.setQuitting(true);
+    }
   });
 
   // Handle activate event (macOS) - show window when clicking dock icon
-  app.on("activate", () => {
+  app.on("activate", async () => {
     console.log("[App] activate event - showing window");
-    if (mainWindow && !mainWindow.isVisible()) {
-      mainWindow.show();
+    if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) {
+      await showMainWindow();
     }
   });
 }

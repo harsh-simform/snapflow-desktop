@@ -450,13 +450,7 @@ export default function HomePage() {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center">
         <div className="flex flex-col items-center space-y-6">
-          <div className="relative">
-            <div className="w-16 h-16 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
-            <div
-              className="absolute inset-0 w-16 h-16 border-4 border-transparent border-t-blue-400/40 rounded-full animate-spin animate-reverse"
-              style={{ animationDuration: "1.5s" }}
-            ></div>
-          </div>
+          <div className="w-16 h-16 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
           <div className="text-center space-y-2">
             <h3 className="text-xl font-semibold text-gray-100">
               Loading SnapFlow
@@ -464,20 +458,6 @@ export default function HomePage() {
             <p className="text-gray-400 font-medium">
               Preparing your captures...
             </p>
-            <div className="flex space-x-1 justify-center mt-4">
-              <div
-                className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"
-                style={{ animationDelay: "0ms" }}
-              ></div>
-              <div
-                className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"
-                style={{ animationDelay: "150ms" }}
-              ></div>
-              <div
-                className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"
-                style={{ animationDelay: "300ms" }}
-              ></div>
-            </div>
           </div>
         </div>
       </div>

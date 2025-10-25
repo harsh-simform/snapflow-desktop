@@ -7,10 +7,15 @@ import {
 import Store from "electron-store";
 import { join } from "path";
 
+export interface WindowInstance extends BrowserWindow {
+  setQuitting?: (value: boolean) => void;
+}
+
 export const createWindow = (
   windowName: string,
-  options: BrowserWindowConstructorOptions
-): BrowserWindow => {
+  options: BrowserWindowConstructorOptions,
+  preventClose: boolean = false
+): WindowInstance => {
   const key = "window-state";
   const name = `window-state-${windowName}`;
   const store = new Store<Rectangle>({ name });
@@ -19,6 +24,7 @@ export const createWindow = (
     height: options.height,
   };
   let state = {};
+  let isQuitting = false;
 
   const restore = () => store.get(key, defaultSize);
 
@@ -80,9 +86,27 @@ export const createWindow = (
       contextIsolation: true,
       ...options.webPreferences,
     },
+  }) as WindowInstance;
+
+  win.on("close", (event) => {
+    // If preventClose is enabled and not quitting, hide window instead of closing
+    if (preventClose && !isQuitting) {
+      event.preventDefault();
+      win.hide();
+    } else {
+      // Save state when actually closing
+      if (!win.isMinimized() && !win.isMaximized()) {
+        saveState();
+      }
+    }
   });
 
-  win.on("close", saveState);
+  // Provide method to set quitting flag from outside
+  if (preventClose) {
+    win.setQuitting = (value: boolean) => {
+      isQuitting = value;
+    };
+  }
 
   return win;
 };
