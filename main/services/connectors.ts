@@ -1,7 +1,7 @@
-import Store from "electron-store";
 import axios from "axios";
 import fs from "fs/promises";
 import path from "path";
+import { getSupabase } from "../utils/supabase";
 
 interface Connector {
   id: string;
@@ -15,54 +15,132 @@ interface Connector {
   };
 }
 
-const store = new Store<{ connectors: Connector[] }>({
-  name: "snapflow-connectors",
-  defaults: {
-    connectors: [],
-  },
-});
-
 export class ConnectorService {
-  getConnectors(): Connector[] {
-    return store.get("connectors");
+  async getConnectors(userId: string): Promise<Connector[]> {
+    const supabase = getSupabase();
+    if (!supabase) {
+      throw new Error("Supabase not configured");
+    }
+
+    const { data, error } = await supabase
+      .from("connectors")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Failed to fetch connectors:", error);
+      throw new Error("Failed to fetch connectors");
+    }
+
+    return (data || []) as Connector[];
   }
 
-  getConnectorById(id: string): Connector | undefined {
-    const connectors = store.get("connectors");
-    return connectors.find((c) => c.id === id);
+  async getConnectorById(
+    userId: string,
+    id: string
+  ): Promise<Connector | null> {
+    const supabase = getSupabase();
+    if (!supabase) {
+      throw new Error("Supabase not configured");
+    }
+
+    const { data, error } = await supabase
+      .from("connectors")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("id", id)
+      .single();
+
+    if (error) {
+      if (error.code === "PGRST116") {
+        return null; // Not found
+      }
+      console.error("Failed to fetch connector:", error);
+      throw new Error("Failed to fetch connector");
+    }
+
+    return data as Connector;
   }
 
-  getGitHubConnectors(): Connector[] {
-    const connectors = store.get("connectors");
-    return connectors.filter((c) => c.type === "github" && c.enabled);
+  async getGitHubConnectors(userId: string): Promise<Connector[]> {
+    const supabase = getSupabase();
+    if (!supabase) {
+      throw new Error("Supabase not configured");
+    }
+
+    const { data, error } = await supabase
+      .from("connectors")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("type", "github")
+      .eq("enabled", true)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Failed to fetch GitHub connectors:", error);
+      throw new Error("Failed to fetch GitHub connectors");
+    }
+
+    return (data || []) as Connector[];
   }
 
-  getConnectorByRepo(owner: string, repo: string): Connector | undefined {
-    const connectors = store.get("connectors");
-    return connectors.find(
-      (c) =>
-        c.type === "github" &&
-        c.config.owner === owner &&
-        c.config.repo === repo
-    );
+  async getConnectorByRepo(
+    userId: string,
+    owner: string,
+    repo: string
+  ): Promise<Connector | null> {
+    const supabase = getSupabase();
+    if (!supabase) {
+      throw new Error("Supabase not configured");
+    }
+
+    const { data, error } = await supabase
+      .from("connectors")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("type", "github")
+      .filter("config->>owner", "eq", owner)
+      .filter("config->>repo", "eq", repo)
+      .single();
+
+    if (error) {
+      if (error.code === "PGRST116") {
+        return null; // Not found
+      }
+      console.error("Failed to fetch connector by repo:", error);
+      throw new Error("Failed to fetch connector by repo");
+    }
+
+    return data as Connector;
   }
 
-  canAddGitHubConnector(): boolean {
-    const githubConnectors = this.getGitHubConnectors();
+  async canAddGitHubConnector(userId: string): Promise<boolean> {
+    const githubConnectors = await this.getGitHubConnectors(userId);
     return githubConnectors.length < 5;
   }
 
-  addConnector(connector: Omit<Connector, "id">): Connector {
-    const connectors = store.get("connectors");
+  async addConnector(
+    userId: string,
+    connector: Omit<Connector, "id">
+  ): Promise<Connector> {
+    const supabase = getSupabase();
+    if (!supabase) {
+      throw new Error("Supabase not configured");
+    }
 
     // Check if we can add more GitHub connectors
-    if (connector.type === "github" && !this.canAddGitHubConnector()) {
+    if (
+      connector.type === "github" &&
+      !(await this.canAddGitHubConnector(userId))
+    ) {
       throw new Error("Maximum of 5 GitHub repositories allowed");
     }
 
     // Check if this repo already exists
     if (connector.type === "github") {
-      const existing = this.getConnectorByRepo(
+      const existing = await this.getConnectorByRepo(
+        userId,
         connector.config.owner,
         connector.config.repo
       );
@@ -73,37 +151,72 @@ export class ConnectorService {
       }
     }
 
-    const newConnector: Connector = {
-      ...connector,
+    const newConnector = {
       id: `${connector.type}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      user_id: userId,
+      ...connector,
     };
-    connectors.push(newConnector);
-    store.set("connectors", connectors);
-    return newConnector;
+
+    const { data, error } = await supabase
+      .from("connectors")
+      .insert([newConnector])
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Failed to add connector:", error);
+      throw new Error("Failed to add connector");
+    }
+
+    return data as Connector;
   }
 
-  updateConnector(id: string, updates: Partial<Connector>): Connector {
-    const connectors = store.get("connectors");
-    const index = connectors.findIndex((c) => c.id === id);
+  async updateConnector(
+    userId: string,
+    id: string,
+    updates: Partial<Connector>
+  ): Promise<Connector> {
+    const supabase = getSupabase();
+    if (!supabase) {
+      throw new Error("Supabase not configured");
+    }
 
-    if (index === -1) {
+    const { data, error } = await supabase
+      .from("connectors")
+      .update(updates)
+      .eq("user_id", userId)
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Failed to update connector:", error);
+      throw new Error("Failed to update connector");
+    }
+
+    if (!data) {
       throw new Error("Connector not found");
     }
 
-    connectors[index] = {
-      ...connectors[index],
-      ...updates,
-      id, // Ensure ID doesn't change
-    };
-
-    store.set("connectors", connectors);
-    return connectors[index];
+    return data as Connector;
   }
 
-  deleteConnector(id: string): void {
-    const connectors = store.get("connectors");
-    const filteredConnectors = connectors.filter((c) => c.id !== id);
-    store.set("connectors", filteredConnectors);
+  async deleteConnector(userId: string, id: string): Promise<void> {
+    const supabase = getSupabase();
+    if (!supabase) {
+      throw new Error("Supabase not configured");
+    }
+
+    const { error } = await supabase
+      .from("connectors")
+      .delete()
+      .eq("user_id", userId)
+      .eq("id", id);
+
+    if (error) {
+      console.error("Failed to delete connector:", error);
+      throw new Error("Failed to delete connector");
+    }
   }
 
   /**
@@ -222,6 +335,7 @@ export class ConnectorService {
       cloudFileUrl?: string;
       syncedTo?: Array<{ platform: string; externalId: string; url?: string }>;
       tags?: string[];
+      type?: "screenshot" | "recording";
     }
   ): Promise<{ issueNumber: number; url: string; isUpdate: boolean }> {
     if (
@@ -253,50 +367,80 @@ export class ConnectorService {
         : null;
 
       if (issueNumber) {
-        // Update existing issue
+        // Try to update existing issue
         console.log(
           "[GitHub] Issue already exists, updating issue #",
           issueNumber
         );
 
-        // Try to upload screenshot
-        let screenshotUrl = issue.cloudFileUrl;
-        if (!screenshotUrl && issue.filePath) {
-          console.log("[GitHub] Attempting to upload screenshot...");
-          screenshotUrl = await this.uploadScreenshotToGitHub(
-            connector,
-            issue.filePath,
-            issueNumber
-          );
-        }
+        try {
+          // Try to upload media (screenshot or recording)
+          let mediaUrl = issue.cloudFileUrl;
+          const isRecording = issue.type === "recording";
 
-        if (screenshotUrl) {
-          body += `\n\n## Screenshot\n\n![Screenshot](${screenshotUrl})`;
-        }
-
-        const response = await axios.patch(
-          `https://api.github.com/repos/${connector.config.owner}/${connector.config.repo}/issues/${issueNumber}`,
-          {
-            title: issue.title,
-            body,
-            labels,
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${connector.config.accessToken}`,
-              Accept: "application/vnd.github.v3+json",
-              "Content-Type": "application/json",
-            },
+          if (!mediaUrl && issue.filePath) {
+            if (isRecording) {
+              console.log("[GitHub] Recording detected - using cloud URL");
+              // For recordings, we prefer cloud URLs since videos can be large
+              // GitHub API has a 100MB limit for files
+            } else {
+              console.log("[GitHub] Attempting to upload screenshot...");
+              mediaUrl = await this.uploadScreenshotToGitHub(
+                connector,
+                issue.filePath,
+                issueNumber
+              );
+            }
           }
-        );
 
-        console.log("[GitHub] Issue updated:", response.data.html_url);
-        return {
-          issueNumber: response.data.number,
-          url: response.data.html_url,
-          isUpdate: true,
-        };
-      } else {
+          if (mediaUrl) {
+            if (isRecording) {
+              body += `\n\n## Recording\n\n[View Recording](${mediaUrl})`;
+            } else {
+              body += `\n\n## Screenshot\n\n![Screenshot](${mediaUrl})`;
+            }
+          }
+
+          const response = await axios.patch(
+            `https://api.github.com/repos/${connector.config.owner}/${connector.config.repo}/issues/${issueNumber}`,
+            {
+              title: issue.title,
+              body,
+              labels,
+            },
+            {
+              headers: {
+                Authorization: `Bearer ${connector.config.accessToken}`,
+                Accept: "application/vnd.github.v3+json",
+                "Content-Type": "application/json",
+              },
+            }
+          );
+
+          console.log("[GitHub] Issue updated:", response.data.html_url);
+          return {
+            issueNumber: response.data.number,
+            url: response.data.html_url,
+            isUpdate: true,
+          };
+        } catch (updateError) {
+          // If issue was deleted (410), create a new one
+          if (updateError.response?.status === 410) {
+            console.log(
+              "[GitHub] Issue #",
+              issueNumber,
+              "was deleted, creating a new issue..."
+            );
+            // Fall through to create new issue
+          } else {
+            // Re-throw other errors
+            throw updateError;
+          }
+        }
+      }
+
+      // Create new issue (either no existing issue or existing issue was deleted)
+      {
         // Create new issue first
         console.log(
           "[GitHub] Creating new issue in",
@@ -323,33 +467,41 @@ export class ConnectorService {
         const issueUrl = response.data.html_url;
         console.log("[GitHub] Issue created:", issueUrl);
 
-        // Now try to upload and attach screenshot
-        if (issue.filePath) {
+        // Now try to upload and attach media (screenshot or recording)
+        const isRecording = issue.type === "recording";
+        let mediaUrl = issue.cloudFileUrl;
+
+        if (!mediaUrl && issue.filePath && !isRecording) {
+          // Only upload screenshots to GitHub; recordings use cloud URLs
           console.log("[GitHub] Attempting to upload screenshot...");
-          const screenshotUrl = await this.uploadScreenshotToGitHub(
+          mediaUrl = await this.uploadScreenshotToGitHub(
             connector,
             issue.filePath,
             newIssueNumber
           );
+        }
 
-          if (screenshotUrl) {
-            // Update the issue with screenshot
-            const updatedBody =
-              body + `\n\n## Screenshot\n\n![Screenshot](${screenshotUrl})`;
+        if (mediaUrl) {
+          // Update the issue with media
+          const mediaSection = isRecording
+            ? `\n\n## Recording\n\n[View Recording](${mediaUrl})`
+            : `\n\n## Screenshot\n\n![Screenshot](${mediaUrl})`;
+          const updatedBody = body + mediaSection;
 
-            await axios.patch(
-              `https://api.github.com/repos/${connector.config.owner}/${connector.config.repo}/issues/${newIssueNumber}`,
-              { body: updatedBody },
-              {
-                headers: {
-                  Authorization: `Bearer ${connector.config.accessToken}`,
-                  Accept: "application/vnd.github.v3+json",
-                  "Content-Type": "application/json",
-                },
-              }
-            );
-            console.log("[GitHub] Screenshot attached to issue");
-          }
+          await axios.patch(
+            `https://api.github.com/repos/${connector.config.owner}/${connector.config.repo}/issues/${newIssueNumber}`,
+            { body: updatedBody },
+            {
+              headers: {
+                Authorization: `Bearer ${connector.config.accessToken}`,
+                Accept: "application/vnd.github.v3+json",
+                "Content-Type": "application/json",
+              },
+            }
+          );
+          console.log(
+            `[GitHub] ${isRecording ? "Recording link" : "Screenshot"} attached to issue`
+          );
         }
 
         return {
@@ -368,6 +520,8 @@ export class ConnectorService {
         throw new Error(
           "GitHub API rate limit exceeded or insufficient permissions"
         );
+      } else if (error.response?.status === 410) {
+        throw new Error("GitHub issue was deleted and could not be recreated");
       } else if (error.response?.status === 422) {
         const message = error.response?.data?.message || "Validation failed";
         const errors = error.response?.data?.errors || [];

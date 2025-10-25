@@ -165,3 +165,57 @@ CREATE POLICY "Public files are publicly accessible"
   ON storage.objects
   FOR SELECT
   USING (bucket_id = 'snapflow-public-bucket');
+
+-- ==========================================
+-- CONNECTORS TABLE
+-- ==========================================
+-- Create connectors table to store user's platform integrations
+CREATE TABLE IF NOT EXISTS public.connectors (
+  id TEXT PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL CHECK (type IN ('github', 'jira', 'linear', 'asana')),
+  config JSONB NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Create index on user_id for faster queries
+CREATE INDEX IF NOT EXISTS idx_connectors_user_id ON public.connectors(user_id);
+
+-- Create index on type for filtering
+CREATE INDEX IF NOT EXISTS idx_connectors_type ON public.connectors(type);
+
+-- Enable Row Level Security
+ALTER TABLE public.connectors ENABLE ROW LEVEL SECURITY;
+
+-- Create policy: Users can only see their own connectors
+CREATE POLICY "Users can view their own connectors"
+  ON public.connectors
+  FOR SELECT
+  USING (auth.uid() = user_id);
+
+-- Create policy: Users can insert their own connectors
+CREATE POLICY "Users can insert their own connectors"
+  ON public.connectors
+  FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+-- Create policy: Users can update their own connectors
+CREATE POLICY "Users can update their own connectors"
+  ON public.connectors
+  FOR UPDATE
+  USING (auth.uid() = user_id);
+
+-- Create policy: Users can delete their own connectors
+CREATE POLICY "Users can delete their own connectors"
+  ON public.connectors
+  FOR DELETE
+  USING (auth.uid() = user_id);
+
+-- Create trigger to automatically update updated_at for connectors
+CREATE TRIGGER update_connectors_updated_at
+  BEFORE UPDATE ON public.connectors
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();

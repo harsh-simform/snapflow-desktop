@@ -1,3 +1,4 @@
+export * from "./AccountSection";
 export * from "./DisplaysSection";
 export * from "./GitHubConnectorManager";
 export * from "./UpdatesSection";

@@ -135,29 +135,24 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
 
 // Preset empty states for common scenarios
 export const NoSnapsEmptyState: React.FC<{ onCapture?: () => void }> = ({
-  onCapture,
+  onCapture: _onCapture,
 }) => (
-  <div className="text-center py-20">
+  <div className="text-center py-32">
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.6, ease: "easeOut" }}
-      className="space-y-8"
+      transition={{ duration: 0.4, ease: "easeOut" }}
+      className="space-y-6 max-w-md mx-auto"
     >
-      {/* Enhanced Icon with Animation */}
+      {/* Simple Icon */}
       <motion.div
-        initial={{ scale: 0.8, opacity: 0 }}
+        initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        transition={{ delay: 0.2, duration: 0.5, ease: "easeOut" }}
-        className="relative"
+        transition={{ delay: 0.1, duration: 0.3 }}
       >
-        <div className="w-32 h-32 bg-gradient-to-br from-blue-600/20 to-purple-600/20 border border-blue-500/30 rounded-3xl flex items-center justify-center mx-auto backdrop-blur-sm relative overflow-hidden">
-          {/* Animated background gradient */}
-          <div className="absolute inset-0 bg-gradient-to-br from-blue-600/10 to-purple-600/10 animate-pulse"></div>
-
-          {/* Camera icon */}
+        <div className="w-20 h-20 bg-gray-800/50 border border-gray-700/50 rounded-2xl flex items-center justify-center mx-auto">
           <svg
-            className="w-16 h-16 text-blue-400 relative z-10"
+            className="w-10 h-10 text-gray-500"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -166,168 +161,25 @@ export const NoSnapsEmptyState: React.FC<{ onCapture?: () => void }> = ({
               strokeLinecap="round"
               strokeLinejoin="round"
               strokeWidth={1.5}
-              d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
-            />
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.5}
-              d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"
+              d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
             />
           </svg>
-
-          {/* Floating plus icon */}
-          <motion.div
-            animate={{
-              y: [-2, 2, -2],
-              rotate: [0, 5, -5, 0],
-            }}
-            transition={{
-              duration: 3,
-              repeat: Infinity,
-              ease: "easeInOut",
-            }}
-            className="absolute -top-2 -right-2 w-8 h-8 bg-blue-600 border-2 border-gray-950 rounded-full flex items-center justify-center shadow-lg"
-          >
-            <svg
-              className="w-4 h-4 text-white"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
-          </motion.div>
         </div>
       </motion.div>
 
-      {/* Enhanced Text Content */}
+      {/* Simple Text */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ delay: 0.4, duration: 0.5 }}
-        className="space-y-4"
+        transition={{ delay: 0.2, duration: 0.3 }}
+        className="space-y-3"
       >
-        <h3 className="text-3xl font-bold text-gray-100">
-          Welcome to SnapFlow
+        <h3 className="text-xl font-semibold text-gray-100">
+          No screenshots yet
         </h3>
-        <p className="text-lg text-gray-400 max-w-md mx-auto leading-relaxed">
-          Start capturing screenshots and screen recordings to create visual bug
-          reports and documentation
+        <p className="text-sm text-gray-500 leading-relaxed">
+          Use the system tray menu to capture your first screenshot
         </p>
-      </motion.div>
-
-      {/* Enhanced Action Buttons */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.6, duration: 0.5 }}
-        className="space-y-6"
-      >
-        {onCapture && (
-          <Button
-            variant="primary"
-            onClick={onCapture}
-            className="px-8 py-4 text-lg font-semibold shadow-2xl shadow-blue-600/30 hover:shadow-blue-600/50 transform hover:scale-105 transition-all duration-200"
-            leftIcon={
-              <svg
-                className="w-6 h-6"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
-                />
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"
-                />
-              </svg>
-            }
-          >
-            Take Your First Snap
-          </Button>
-        )}
-
-        {/* Quick Tips */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto">
-          <motion.div
-            whileHover={{ scale: 1.02 }}
-            className="bg-gray-900/50 border border-gray-800/50 rounded-xl p-4 backdrop-blur-sm"
-          >
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-green-600/20 border border-green-500/30 rounded-lg flex items-center justify-center">
-                <svg
-                  className="w-5 h-5 text-green-400"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"
-                  />
-                </svg>
-              </div>
-              <div className="text-left">
-                <div className="text-sm font-medium text-gray-100">
-                  Area Capture
-                </div>
-                <div className="text-xs text-gray-400 flex items-center space-x-1">
-                  <kbd className="px-1.5 py-0.5 bg-gray-800/50 border border-gray-700/50 rounded text-xs">
-                    ⌘⇧4
-                  </kbd>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-
-          <motion.div
-            whileHover={{ scale: 1.02 }}
-            className="bg-gray-900/50 border border-gray-800/50 rounded-xl p-4 backdrop-blur-sm"
-          >
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-purple-600/20 border border-purple-500/30 rounded-lg flex items-center justify-center">
-                <svg
-                  className="w-5 h-5 text-purple-400"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
-                  />
-                </svg>
-              </div>
-              <div className="text-left">
-                <div className="text-sm font-medium text-gray-100">
-                  Full Screen
-                </div>
-                <div className="text-xs text-gray-400 flex items-center space-x-1">
-                  <kbd className="px-1.5 py-0.5 bg-gray-800/50 border border-gray-700/50 rounded text-xs">
-                    ⌘⇧3
-                  </kbd>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        </div>
       </motion.div>
     </motion.div>
   </div>

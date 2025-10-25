@@ -79,6 +79,8 @@ if (protocol && protocol.registerSchemesAsPrivileged) {
 // Global state
 let mainWindow: typeof BrowserWindow.prototype | null = null;
 let windowCaptureOverlay: typeof BrowserWindow.prototype | null = null;
+let recordingControlWindow: typeof BrowserWindow.prototype | null = null;
+let recordingAreaSelector: typeof BrowserWindow.prototype | null = null;
 let tray: typeof Tray.prototype | null = null;
 let isQuitting = false;
 let pendingScreenshot: { dataUrl: string; mode: string } | null = null;
@@ -121,6 +123,7 @@ async function createMainWindow() {
     width: 1200,
     height: 800,
     icon: iconPath,
+    frame: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -165,10 +168,24 @@ async function createMainWindow() {
 }
 
 function createSystemTray() {
-  // Get tray icon path - different for dev vs production
-  const trayIconPath = isProd
-    ? path.join(process.resourcesPath, "tray-icon.png")
-    : path.join(__dirname, "../resources/tray-icon.png");
+  // Get tray icon path - different for dev vs production and OS
+  let trayIconPath: string;
+
+  if (isProd) {
+    // Use white icon for Windows, regular icon for other platforms
+    if (process.platform === "win32") {
+      trayIconPath = path.join(process.resourcesPath, "tray-icon-white.png");
+    } else {
+      trayIconPath = path.join(process.resourcesPath, "tray-icon.png");
+    }
+  } else {
+    // Development mode
+    if (process.platform === "win32") {
+      trayIconPath = path.join(__dirname, "../resources/tray-icon-white.png");
+    } else {
+      trayIconPath = path.join(__dirname, "../resources/tray-icon.png");
+    }
+  }
 
   const image = nativeImage.createFromPath(trayIconPath);
 
@@ -232,6 +249,14 @@ function updateTrayMenu() {
   const contextMenu = Menu.buildFromTemplate([
     ...captureMenuItems,
     { type: "separator" },
+    // TODO: Recording feature - temporarily disabled for development
+    // {
+    //   label: "Record Screen",
+    //   click: () => {
+    //     handleScreenRecording();
+    //   },
+    // },
+    // { type: "separator" },
     {
       label: "View My Snaps",
       click: () => {
@@ -532,6 +557,136 @@ async function handleScreenshotCapture(
   }
 }
 
+// TODO: Recording feature - temporarily disabled
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function handleScreenRecording() {
+  try {
+    // Check permission first
+    const hasPermission = await captureService.checkScreenRecordingPermission();
+    if (!hasPermission) {
+      console.log("[Recording] No screen recording permission detected");
+      const result = await dialog.showMessageBox(mainWindow!, {
+        type: "warning",
+        title: "Screen Recording Permission Required",
+        message: "SnapFlow needs Screen Recording permission",
+        detail:
+          "Please grant Screen Recording permission in System Settings > Privacy & Security > Screen Recording, then completely quit and restart SnapFlow.\n\nNote: Simply closing the window won't work - you must fully quit the app (Cmd+Q) and restart it.",
+        buttons: ["Open System Settings", "OK"],
+      });
+
+      if (result.response === 0) {
+        shell.openExternal(
+          "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+        );
+      }
+      return;
+    }
+
+    // Create area selector for recording
+    await createRecordingAreaSelector();
+  } catch (error) {
+    console.error("[Recording] Failed to start recording:", error);
+  }
+}
+
+// TODO: Recording feature - temporarily disabled
+
+async function createRecordingAreaSelector() {
+  const { screen } = electron;
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width, height, x, y } = primaryDisplay.bounds;
+
+  recordingAreaSelector = new BrowserWindow({
+    width,
+    height,
+    x,
+    y,
+    transparent: true,
+    frame: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    movable: false,
+    fullscreen: false,
+    hasShadow: false,
+    acceptFirstMouse: true,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, "../preload/index.js"),
+      devTools: !isProd, // Enable dev tools in development
+    },
+  });
+
+  // Set window level to float above all other windows
+  recordingAreaSelector.setAlwaysOnTop(true, "screen-saver");
+  recordingAreaSelector.setVisibleOnAllWorkspaces(true);
+
+  // Load the area selector page (no screenshot needed - window is transparent)
+  if (isProd) {
+    await recordingAreaSelector.loadURL("app://./area-selector");
+  } else {
+    const port = process.argv[2];
+    await recordingAreaSelector.loadURL(
+      `http://localhost:${port}/area-selector`
+    );
+  }
+
+  recordingAreaSelector.on("closed", () => {
+    recordingAreaSelector = null;
+  });
+}
+
+// TODO: Recording feature - temporarily disabled
+
+async function createRecordingControlWindow(bounds: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}) {
+  // Create a small control window that floats above everything
+  const controlWidth = 300;
+  const controlHeight = 150;
+
+  recordingControlWindow = new BrowserWindow({
+    width: controlWidth,
+    height: controlHeight,
+    x: bounds.x + bounds.width / 2 - controlWidth / 2,
+    y: bounds.y + bounds.height + 20, // Position below the recording area
+    transparent: false,
+    frame: false,
+    alwaysOnTop: true,
+    skipTaskbar: false,
+    resizable: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, "../preload/index.js"),
+    },
+  });
+
+  recordingControlWindow.setAlwaysOnTop(true, "floating");
+
+  // Pass recording bounds to the control window
+  const controlData = encodeURIComponent(JSON.stringify(bounds));
+
+  if (isProd) {
+    await recordingControlWindow.loadURL(
+      `app://./recording-control?bounds=${controlData}`
+    );
+  } else {
+    const port = process.argv[2];
+    await recordingControlWindow.loadURL(
+      `http://localhost:${port}/recording-control?bounds=${controlData}`
+    );
+  }
+
+  recordingControlWindow.on("closed", () => {
+    recordingControlWindow = null;
+  });
+}
+
 async function handleCheckForUpdates() {
   try {
     console.log("[Tray] Checking for updates...");
@@ -706,18 +861,38 @@ function setupIPCHandlers() {
       await sessionManager.setUser(user);
       return { success: true, data: user };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("Create user error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
   ipcMain.handle("user:login", async (_event, { email, password }) => {
     try {
+      console.log("[IPC] Login attempt for:", email);
+      console.log(
+        "[ENV] SUPABASE_URL:",
+        process.env.SUPABASE_URL ? "SET" : "NOT SET"
+      );
+      console.log(
+        "[ENV] SUPABASE_ANON_KEY:",
+        process.env.SUPABASE_ANON_KEY
+          ? "SET (length: " + process.env.SUPABASE_ANON_KEY.length + ")"
+          : "NOT SET"
+      );
+
       const user = await authService.login(email, password);
+      console.log("[IPC] Login successful for:", user.email);
+
       // Store user in session
       await sessionManager.setUser(user);
       return { success: true, data: user };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("[IPC] Login error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
@@ -732,16 +907,41 @@ function setupIPCHandlers() {
       const user = sessionManager.getUser();
       return { success: true, data: user };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
     }
   });
+
+  ipcMain.handle(
+    "user:update",
+    async (_event, { userId, updates }: { userId: string; updates: any }) => {
+      try {
+        const user = await authService.updateUser(userId, updates);
+        // Update session with new user data
+        await sessionManager.setUser(user);
+        return { success: true, data: user };
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : "An unexpected error occurred";
+        console.error("IPC Handler error:", error);
+        return { success: false, error: errorMessage };
+      }
+    }
+  );
 
   ipcMain.handle("user:logout", async () => {
     try {
       await sessionManager.clearUser();
       return { success: true };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("Logout error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
@@ -763,7 +963,12 @@ function setupIPCHandlers() {
         );
         return { success: true, data: issue };
       } catch (error) {
-        return { success: false, error: error.message };
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : "An unexpected error occurred";
+        console.error("IPC Handler error:", error);
+        return { success: false, error: errorMessage };
       }
     }
   );
@@ -773,7 +978,10 @@ function setupIPCHandlers() {
       const issues = issueService.getIssues(userId);
       return { success: true, data: issues };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
@@ -782,7 +990,10 @@ function setupIPCHandlers() {
       const issue = await issueService.updateIssue(issueId, updates);
       return { success: true, data: issue };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
@@ -791,7 +1002,10 @@ function setupIPCHandlers() {
       await issueService.deleteIssue(issueId);
       return { success: true };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
@@ -806,7 +1020,10 @@ function setupIPCHandlers() {
         data: { buffer: Array.from(result.buffer), dataUrl: result.dataUrl },
       };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
@@ -818,7 +1035,10 @@ function setupIPCHandlers() {
         data: { buffer: Array.from(result.buffer), dataUrl: result.dataUrl },
       };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
@@ -833,7 +1053,10 @@ function setupIPCHandlers() {
         data: { buffer: Array.from(result.buffer), dataUrl: result.dataUrl },
       };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
@@ -876,7 +1099,12 @@ function setupIPCHandlers() {
           windowCaptureOverlay = null;
         }
         mainWindow?.show();
-        return { success: false, error: error.message };
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : "An unexpected error occurred";
+        console.error("IPC Handler error:", error);
+        return { success: false, error: errorMessage };
       }
     }
   );
@@ -889,7 +1117,10 @@ function setupIPCHandlers() {
         await captureService.checkScreenRecordingPermission();
       return { success: true, data: hasPermission };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
@@ -898,7 +1129,10 @@ function setupIPCHandlers() {
       const windows = await captureService.getAvailableWindows();
       return { success: true, data: windows };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
@@ -907,7 +1141,10 @@ function setupIPCHandlers() {
       const displays = captureService.getAvailableDisplays();
       return { success: true, data: displays };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
@@ -919,7 +1156,10 @@ function setupIPCHandlers() {
         data: { buffer: Array.from(result.buffer), dataUrl: result.dataUrl },
       };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
@@ -931,7 +1171,10 @@ function setupIPCHandlers() {
         data: { buffer: Array.from(result.buffer), dataUrl: result.dataUrl },
       };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
@@ -983,7 +1226,10 @@ function setupIPCHandlers() {
       console.error("[Window Capture] Error:", error);
       // Show main window even on error
       mainWindow?.show();
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
@@ -1009,7 +1255,100 @@ function setupIPCHandlers() {
       );
       return { success: true, data: { filePath, thumbnailPath } };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
+    }
+  });
+
+  // Recording handlers
+  ipcMain.handle("recording:area-selected", async (_event, { bounds }) => {
+    console.log("[IPC] Recording area selected:", bounds);
+    try {
+      // Close the area selector
+      if (recordingAreaSelector) {
+        console.log("[IPC] Closing area selector window");
+        recordingAreaSelector.close();
+        recordingAreaSelector = null;
+      }
+
+      // Create the recording control window with the selected bounds
+      console.log("[IPC] Creating recording control window");
+      await createRecordingControlWindow(bounds);
+      console.log("[IPC] Recording control window created successfully");
+
+      return { success: true };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("[Recording] Area selection error:", error);
+      return { success: false, error: errorMessage };
+    }
+  });
+
+  ipcMain.handle("recording:start", async (_event, { bounds }) => {
+    try {
+      await captureService.startRecording(bounds);
+      return { success: true };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("[Recording] Start error:", error);
+      return { success: false, error: errorMessage };
+    }
+  });
+
+  ipcMain.handle("recording:stop", async () => {
+    try {
+      const result = await captureService.stopRecording();
+
+      // Close recording control window
+      if (recordingControlWindow) {
+        recordingControlWindow.close();
+        recordingControlWindow = null;
+      }
+
+      // Show main window and navigate to home
+      mainWindow?.show();
+      mainWindow?.webContents.send("recording-saved", result);
+
+      return { success: true, data: result };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("[Recording] Stop error:", error);
+      return { success: false, error: errorMessage };
+    }
+  });
+
+  ipcMain.handle("recording:cancel", () => {
+    console.log("[IPC] Recording cancel requested");
+    try {
+      // Stop any ongoing recording
+      captureService.stopRecording().catch(console.error);
+
+      // Close recording control window
+      if (recordingControlWindow) {
+        console.log("[IPC] Closing recording control window");
+        recordingControlWindow.close();
+        recordingControlWindow = null;
+      }
+
+      // Close area selector if still open
+      if (recordingAreaSelector) {
+        console.log("[IPC] Closing recording area selector");
+        recordingAreaSelector.close();
+        recordingAreaSelector = null;
+      }
+
+      console.log("[IPC] Recording cancelled successfully");
+      return { success: true };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("[Recording] Cancel error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
@@ -1033,49 +1372,92 @@ function setupIPCHandlers() {
   // Connector handlers
   ipcMain.handle("connector:list", async () => {
     try {
-      const connectors = connectorService.getConnectors();
+      const user = sessionManager.getUser();
+      if (!user) {
+        throw new Error("User not authenticated");
+      }
+      const connectors = await connectorService.getConnectors(user.id);
       return { success: true, data: connectors };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
   ipcMain.handle("connector:add", async (_event, connector) => {
     try {
-      const newConnector = connectorService.addConnector(connector);
+      const user = sessionManager.getUser();
+      if (!user) {
+        throw new Error("User not authenticated");
+      }
+      const newConnector = await connectorService.addConnector(
+        user.id,
+        connector
+      );
       return { success: true, data: newConnector };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
   ipcMain.handle("connector:update", async (_event, { id, updates }) => {
     try {
-      const connector = connectorService.updateConnector(id, updates);
+      const user = sessionManager.getUser();
+      if (!user) {
+        throw new Error("User not authenticated");
+      }
+      const connector = await connectorService.updateConnector(
+        user.id,
+        id,
+        updates
+      );
       return { success: true, data: connector };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
   ipcMain.handle("connector:delete", async (_event, { id }) => {
     try {
-      connectorService.deleteConnector(id);
+      const user = sessionManager.getUser();
+      if (!user) {
+        throw new Error("User not authenticated");
+      }
+      await connectorService.deleteConnector(user.id, id);
       return { success: true };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
   // Sync handler - GitHub
   ipcMain.handle("sync:issue", async (_event, { issueId, connectorId }) => {
     try {
+      const user = sessionManager.getUser();
+      if (!user) {
+        throw new Error("User not authenticated");
+      }
+
       const issue = issueService.getIssueById(issueId);
       if (!issue) {
         throw new Error("Issue not found");
       }
 
-      const connector = connectorService.getConnectorById(connectorId);
+      const connector = await connectorService.getConnectorById(
+        user.id,
+        connectorId
+      );
       if (!connector || !connector.enabled) {
         throw new Error("GitHub connector not found or disabled");
       }
@@ -1088,6 +1470,8 @@ function setupIPCHandlers() {
         filePath: issue.filePath,
         cloudFileUrl: issue.cloudFileUrl, // Pass the cloud URL if available
         syncedTo: issue.syncedTo, // Pass existing sync info to check for duplicates
+        tags: issue.tags, // Pass tags to be mapped to GitHub labels
+        type: issue.type, // Pass type to distinguish screenshots from recordings
       });
 
       await issueService.updateSyncStatus(issueId, "synced", {
@@ -1107,7 +1491,10 @@ function setupIPCHandlers() {
       };
     } catch (error) {
       await issueService.updateSyncStatus(issueId, "failed");
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
@@ -1117,7 +1504,10 @@ function setupIPCHandlers() {
       const result = await syncService.syncAllToCloud(userId);
       return { success: result.success, data: result };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
@@ -1126,7 +1516,10 @@ function setupIPCHandlers() {
       const result = await syncService.fetchFromCloud(userId);
       return { success: result.success, data: result };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
@@ -1135,7 +1528,10 @@ function setupIPCHandlers() {
       const result = await syncService.fullSync(userId);
       return { success: result.success, data: result };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
@@ -1144,7 +1540,10 @@ function setupIPCHandlers() {
       const history = await syncService.getLatestSyncHistory(userId);
       return { success: true, data: history };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
@@ -1160,7 +1559,12 @@ function setupIPCHandlers() {
         );
         return { success: true, data: { isValid } };
       } catch (error) {
-        return { success: false, error: error.message };
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : "An unexpected error occurred";
+        console.error("IPC Handler error:", error);
+        return { success: false, error: errorMessage };
       }
     }
   );
@@ -1188,7 +1592,10 @@ function setupIPCHandlers() {
       return { success: true, data: dataUrl };
     } catch (error) {
       console.error("Error reading image:", error);
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
@@ -1206,13 +1613,42 @@ function setupIPCHandlers() {
     mainWindow?.hide();
   });
 
+  // Window control handlers
+  ipcMain.handle("window:close", () => {
+    if (mainWindow) {
+      isQuitting = true;
+      mainWindow.close();
+    }
+  });
+
+  ipcMain.handle("window:minimize", () => {
+    mainWindow?.minimize();
+  });
+
+  ipcMain.handle("window:maximize", () => {
+    if (mainWindow) {
+      if (mainWindow.isMaximized()) {
+        mainWindow.unmaximize();
+      } else {
+        mainWindow.maximize();
+      }
+    }
+  });
+
+  ipcMain.handle("window:is-maximized", () => {
+    return mainWindow?.isMaximized() || false;
+  });
+
   // Update handlers
   ipcMain.handle("update:check", async () => {
     try {
       const result = await updaterService.checkForUpdates();
       return { success: true, data: result };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
@@ -1243,7 +1679,10 @@ function setupIPCHandlers() {
       }
     } catch (error) {
       console.error("[IPC] Manual update check failed:", error);
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
@@ -1252,7 +1691,10 @@ function setupIPCHandlers() {
       await updaterService.downloadUpdate();
       return { success: true };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
@@ -1261,7 +1703,10 @@ function setupIPCHandlers() {
       updaterService.quitAndInstall();
       return { success: true };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
@@ -1270,7 +1715,10 @@ function setupIPCHandlers() {
       const info = updaterService.getUpdateInfo();
       return { success: true, data: info };
     } catch (error) {
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 
@@ -1305,7 +1753,10 @@ function setupIPCHandlers() {
       }
     } catch (error) {
       console.error("[Debug] Test capture failed:", error);
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      console.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
     }
   });
 }

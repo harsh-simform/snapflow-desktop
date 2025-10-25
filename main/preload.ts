@@ -26,6 +26,8 @@ const api = {
   loginUser: (email: string, password: string) =>
     ipcRenderer.invoke("user:login", { email, password }),
   getUser: () => ipcRenderer.invoke("user:get"),
+  updateUser: (userId: string, updates: { name?: string; email?: string }) =>
+    ipcRenderer.invoke("user:update", { userId, updates }),
   logout: () => ipcRenderer.invoke("user:logout"),
 
   // Issue methods
@@ -80,6 +82,22 @@ const api = {
     ipcRenderer.invoke("capture:select-window", { windowId }),
   cancelWindowSelect: () => ipcRenderer.invoke("capture:cancel-window-select"),
 
+  // Recording methods
+  recordingAreaSelected: (bounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }) => ipcRenderer.invoke("recording:area-selected", { bounds }),
+  startRecording: (bounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }) => ipcRenderer.invoke("recording:start", { bounds }),
+  stopRecording: () => ipcRenderer.invoke("recording:stop"),
+  cancelRecording: () => ipcRenderer.invoke("recording:cancel"),
+
   // Connector methods
   listConnectors: () => ipcRenderer.invoke("connector:list"),
   addConnector: (connector: Record<string, unknown>) =>
@@ -122,6 +140,12 @@ const api = {
   quitApp: () => ipcRenderer.invoke("app:quit"),
   showWindow: () => ipcRenderer.invoke("app:show-window"),
   hideWindow: () => ipcRenderer.invoke("app:hide-window"),
+
+  // Window control
+  closeWindow: () => ipcRenderer.invoke("window:close"),
+  minimizeWindow: () => ipcRenderer.invoke("window:minimize"),
+  maximizeWindow: () => ipcRenderer.invoke("window:maximize"),
+  isMaximized: () => ipcRenderer.invoke("window:is-maximized"),
 
   // Update methods
   checkForUpdates: () => ipcRenderer.invoke("update:check"),

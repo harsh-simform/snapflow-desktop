@@ -1,160 +1,234 @@
 import React, { useEffect, useState, useRef } from "react";
-import { useRouter } from "next/router";
+import Head from "next/head";
+
+interface SelectionBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 export default function AreaSelector() {
-  const router = useRouter();
+  const containerRef = useRef<HTMLDivElement>(null);
   const [isSelecting, setIsSelecting] = useState(false);
-  const [startPoint, setStartPoint] = useState({ x: 0, y: 0 });
-  const [endPoint, setEndPoint] = useState({ x: 0, y: 0 });
-  const [screenshot, setScreenshot] = useState<string | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [startPos, setStartPos] = useState<{ x: number; y: number } | null>(
+    null
+  );
+  const [currentPos, setCurrentPos] = useState<{ x: number; y: number } | null>(
+    null
+  );
+
+  const handleCancel = async () => {
+    console.log("[Area Selector] Cancel requested");
+    try {
+      await window.api.cancelRecording();
+      console.log("[Area Selector] Cancel successful");
+    } catch (error) {
+      console.error("[Area Selector] Failed to cancel:", error);
+    }
+  };
 
   useEffect(() => {
-    // Listen for the background screenshot from main process
-    const cleanup = window.api.onBackgroundScreenshot?.((data: any) => {
-      if (data && data.dataUrl) {
-        setScreenshot(data.dataUrl);
+    console.log("[Area Selector] Component mounted");
+
+    // Handle escape key to cancel
+    const handleKeyDown = (e: KeyboardEvent) => {
+      console.log("[Area Selector] Key pressed:", e.key);
+      if (e.key === "Escape") {
+        console.log("[Area Selector] Escape key detected, cancelling...");
+        handleCancel();
       }
-    });
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      if (cleanup) cleanup();
+      console.log("[Area Selector] Component unmounting");
+      window.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
 
-  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    setIsSelecting(true);
-    setStartPoint({ x, y });
-    setEndPoint({ x, y });
+  const getMousePosition = (e: React.MouseEvent): { x: number; y: number } => {
+    return {
+      x: e.clientX,
+      y: e.clientY,
+    };
   };
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isSelecting) return;
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const pos = getMousePosition(e);
+    setIsSelecting(true);
+    setStartPos(pos);
+    setCurrentPos(pos);
+  };
 
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    setEndPoint({ x, y });
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isSelecting && startPos) {
+      e.preventDefault();
+      const pos = getMousePosition(e);
+      setCurrentPos(pos);
+    }
   };
 
   const handleMouseUp = async () => {
-    if (!isSelecting) return;
-    setIsSelecting(false);
+    console.log(
+      "[Area Selector] Mouse up - isSelecting:",
+      isSelecting,
+      "startPos:",
+      startPos,
+      "currentPos:",
+      currentPos
+    );
 
-    // Calculate bounds
-    const x = Math.min(startPoint.x, endPoint.x);
-    const y = Math.min(startPoint.y, endPoint.y);
-    const width = Math.abs(endPoint.x - startPoint.x);
-    const height = Math.abs(endPoint.y - startPoint.y);
+    if (isSelecting && startPos && currentPos) {
+      // Calculate selection bounds
+      const x = Math.min(startPos.x, currentPos.x);
+      const y = Math.min(startPos.y, currentPos.y);
+      const width = Math.abs(currentPos.x - startPos.x);
+      const height = Math.abs(currentPos.y - startPos.y);
 
-    // Minimum size check
-    if (width < 10 || height < 10) {
-      setStartPoint({ x: 0, y: 0 });
-      setEndPoint({ x: 0, y: 0 });
-      return;
-    }
-
-    // Capture the selected region
-    try {
-      await window.api.captureScreenshot({
-        mode: "region",
-        bounds: { x, y, width, height },
+      console.log("[Area Selector] Selection dimensions:", {
+        x,
+        y,
+        width,
+        height,
       });
-      // The screenshot handler in background.ts will navigate to annotate page
-    } catch (error) {
-      console.error("Failed to capture region:", error);
+
+      // Only proceed if there's a meaningful selection (at least 50x50 pixels)
+      if (width >= 50 && height >= 50) {
+        try {
+          // Scale bounds for high DPI displays
+          const scaleFactor = window.devicePixelRatio;
+          const scaledBounds = {
+            x: Math.round(x * scaleFactor),
+            y: Math.round(y * scaleFactor),
+            width: Math.round(width * scaleFactor),
+            height: Math.round(height * scaleFactor),
+          };
+
+          console.log(
+            "[Area Selector] Sending area selection with bounds:",
+            scaledBounds
+          );
+          await window.api.recordingAreaSelected(scaledBounds);
+          console.log("[Area Selector] Area selection sent successfully");
+        } catch (error) {
+          console.error(
+            "[Area Selector] Failed to process area selection:",
+            error
+          );
+        }
+      } else {
+        console.log(
+          "[Area Selector] Selection too small, minimum 50x50 required"
+        );
+      }
+
+      // Reset selection
+      setIsSelecting(false);
+      setStartPos(null);
+      setCurrentPos(null);
     }
   };
 
-  const handleCancel = () => {
-    router.push("/home");
+  // Calculate selection rectangle for display
+  const getSelectionRect = (): SelectionBounds | null => {
+    if (!startPos || !currentPos) return null;
+
+    return {
+      x: Math.min(startPos.x, currentPos.x),
+      y: Math.min(startPos.y, currentPos.y),
+      width: Math.abs(currentPos.x - startPos.x),
+      height: Math.abs(currentPos.y - startPos.y),
+    };
   };
 
-  // Calculate selection rectangle
-  const selectionBounds = {
-    x: Math.min(startPoint.x, endPoint.x),
-    y: Math.min(startPoint.y, endPoint.y),
-    width: Math.abs(endPoint.x - startPoint.x),
-    height: Math.abs(endPoint.y - startPoint.y),
-  };
+  const selectionRect = getSelectionRect();
 
   return (
-    <div className="h-screen bg-gray-950 flex flex-col overflow-hidden">
-      {/* Instructions */}
-      <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-20 bg-gray-900/95 border border-gray-800 rounded-lg px-4 py-2 shadow-lg">
-        <p className="text-sm text-gray-300">
-          Click and drag to select an area. Press{" "}
-          <kbd className="px-1.5 py-0.5 bg-gray-800 border border-gray-700 rounded text-xs">
-            ESC
-          </kbd>{" "}
-          to cancel
-        </p>
-      </div>
-
-      {/* Cancel Button */}
-      <button
-        onClick={handleCancel}
-        className="absolute top-4 right-4 z-20 px-4 py-2 bg-gray-900/95 hover:bg-gray-800 text-gray-300 border border-gray-800 rounded-lg transition-colors"
-      >
-        Cancel
-      </button>
-
-      {/* Selection Area */}
+    <>
+      <Head>
+        <title>Select Recording Area - SnapFlow</title>
+        <style>{`
+          body {
+            background: transparent !important;
+            overflow: hidden;
+          }
+          html {
+            background: transparent !important;
+          }
+        `}</style>
+      </Head>
       <div
-        className="relative flex-1 cursor-crosshair overflow-hidden"
+        ref={containerRef}
+        className="relative w-screen h-screen overflow-hidden cursor-crosshair"
+        style={{ background: "transparent" }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            handleCancel();
-          }
-        }}
-        tabIndex={0}
       >
-        {/* Background Screenshot */}
-        {screenshot && (
-          <img
-            src={screenshot}
-            alt="Screenshot"
-            className="absolute inset-0 w-full h-full object-contain"
-            draggable={false}
-          />
-        )}
+        {/* Instructions */}
+        <div className="absolute top-8 left-1/2 transform -translate-x-1/2 z-50">
+          <div className="bg-gray-900/90 backdrop-blur-sm text-white px-6 py-3 rounded-lg shadow-2xl border border-gray-700">
+            <div className="text-center">
+              <div className="text-sm font-semibold mb-1">
+                Select Recording Area
+              </div>
+              <div className="text-xs text-gray-400">
+                Click and drag to select • Press{" "}
+                <kbd className="px-1.5 py-0.5 bg-gray-700 rounded text-xs">
+                  Esc
+                </kbd>{" "}
+                to cancel
+              </div>
+            </div>
+          </div>
+        </div>
 
-        {/* Dark Overlay */}
-        <div className="absolute inset-0 bg-black/50" />
-
-        {/* Selection Rectangle */}
-        {(isSelecting || selectionBounds.width > 0) && (
+        {/* Selection rectangle */}
+        {selectionRect && (
           <>
-            {/* Clear area (no dark overlay) */}
+            {/* Darkened overlay everywhere except selection */}
             <div
-              className="absolute border-2 border-blue-500 bg-transparent"
+              className="absolute pointer-events-none"
               style={{
-                left: `${selectionBounds.x}px`,
-                top: `${selectionBounds.y}px`,
-                width: `${selectionBounds.width}px`,
-                height: `${selectionBounds.height}px`,
+                left: 0,
+                top: 0,
+                width: "100vw",
+                height: "100vh",
+                boxShadow: `0 0 0 ${selectionRect.x}px rgba(0,0,0,0.5) inset,
+                           0 0 0 ${selectionRect.y}px rgba(0,0,0,0.5) inset`,
+              }}
+            />
+
+            {/* Clear area (selected region) */}
+            <div
+              className="absolute border-3 border-blue-500"
+              style={{
+                left: selectionRect.x,
+                top: selectionRect.y,
+                width: selectionRect.width,
+                height: selectionRect.height,
                 boxShadow: "0 0 0 9999px rgba(0, 0, 0, 0.5)",
+                borderWidth: "3px",
               }}
             >
-              {/* Dimensions Label */}
-              {selectionBounds.width > 0 && selectionBounds.height > 0 && (
-                <div className="absolute -top-8 left-0 bg-blue-500 text-white text-xs px-2 py-1 rounded">
-                  {Math.round(selectionBounds.width)} x{" "}
-                  {Math.round(selectionBounds.height)}
-                </div>
-              )}
+              {/* Dimension indicator */}
+              <div className="absolute -top-8 left-0 bg-blue-600 text-white text-xs px-2 py-1 rounded font-mono">
+                {Math.round(selectionRect.width)} ×{" "}
+                {Math.round(selectionRect.height)}
+              </div>
+
+              {/* Corner handles */}
+              <div className="absolute -top-1 -left-1 w-2 h-2 bg-blue-500 rounded-full"></div>
+              <div className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full"></div>
+              <div className="absolute -bottom-1 -left-1 w-2 h-2 bg-blue-500 rounded-full"></div>
+              <div className="absolute -bottom-1 -right-1 w-2 h-2 bg-blue-500 rounded-full"></div>
             </div>
           </>
         )}
       </div>
-    </div>
+    </>
   );
 }

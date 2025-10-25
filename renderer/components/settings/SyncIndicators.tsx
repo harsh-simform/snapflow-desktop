@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Button } from "../ui/Button";
+import { SkeletonSyncCard } from "../ui/Skeleton";
 
 interface SyncStatus {
   isSyncing: boolean;
@@ -28,6 +29,7 @@ export function CloudSyncIndicator({ userId }: { userId: string }) {
     syncCount: 0,
     error: null,
   });
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     loadSyncHistory();
@@ -35,6 +37,7 @@ export function CloudSyncIndicator({ userId }: { userId: string }) {
 
   const loadSyncHistory = async () => {
     try {
+      setIsLoading(true);
       const result = await window.api.getSyncHistory(userId);
       if (result.success && result.data) {
         const history: SyncHistory = result.data;
@@ -56,6 +59,8 @@ export function CloudSyncIndicator({ userId }: { userId: string }) {
       }
     } catch (error) {
       console.error("Failed to load sync history:", error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -104,6 +109,10 @@ export function CloudSyncIndicator({ userId }: { userId: string }) {
     if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
     return `${Math.floor(seconds / 86400)}d ago`;
   };
+
+  if (isLoading) {
+    return <SkeletonSyncCard />;
+  }
 
   return (
     <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 border border-gray-700/50 rounded-2xl p-8 hover:border-gray-600/50 transition-all duration-300 backdrop-blur-sm max-w-4xl">

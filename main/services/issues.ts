@@ -38,6 +38,12 @@ export class IssueService {
     description?: string,
     thumbnailPath?: string
   ): Promise<Issue> {
+    console.log("[Issue Service] === CREATE ISSUE START ===");
+    console.log("[Issue Service] User ID:", userId);
+    console.log("[Issue Service] Title:", title);
+    console.log("[Issue Service] Type:", type);
+    console.log("[Issue Service] File path:", filePath);
+
     const issue: Issue = {
       id: generateIssueId(),
       title,
@@ -51,21 +57,31 @@ export class IssueService {
       userId,
     };
 
+    console.log("[Issue Service] Generated issue ID:", issue.id);
+
     const issues = store.get("issues");
     issues.push(issue);
     store.set("issues", issues);
+    console.log("[Issue Service] Saved to store, total issues:", issues.length);
 
     // Save metadata to file system
+    console.log("[Issue Service] Saving metadata to file system...");
     await storageManager.saveMetadata(issue.id, issue);
 
+    console.log("[Issue Service] ✓ Issue created successfully");
+    console.log("[Issue Service] === CREATE ISSUE END ===");
     return issue;
   }
 
   getIssues(userId?: string): Issue[] {
+    console.log("[Issue Service] Getting issues for user:", userId || "all");
     const issues = store.get("issues");
     if (userId) {
-      return issues.filter((issue) => issue.userId === userId);
+      const filtered = issues.filter((issue) => issue.userId === userId);
+      console.log("[Issue Service] Found", filtered.length, "issues for user");
+      return filtered;
     }
+    console.log("[Issue Service] Found", issues.length, "total issues");
     return issues;
   }
 
@@ -75,10 +91,15 @@ export class IssueService {
   }
 
   async updateIssue(issueId: string, updates: Partial<Issue>): Promise<Issue> {
+    console.log("[Issue Service] === UPDATE ISSUE START ===");
+    console.log("[Issue Service] Issue ID:", issueId);
+    console.log("[Issue Service] Updates:", JSON.stringify(updates));
+
     const issues = store.get("issues");
     const index = issues.findIndex((issue) => issue.id === issueId);
 
     if (index === -1) {
+      console.error("[Issue Service] ✗ Issue not found");
       throw new Error("Issue not found");
     }
 
@@ -90,20 +111,32 @@ export class IssueService {
 
     issues[index] = updatedIssue;
     store.set("issues", issues);
+    console.log("[Issue Service] Saved to store");
 
     // Update metadata in file system
+    console.log("[Issue Service] Updating metadata in file system...");
     await storageManager.saveMetadata(issueId, updatedIssue);
 
+    console.log("[Issue Service] ✓ Issue updated successfully");
+    console.log("[Issue Service] === UPDATE ISSUE END ===");
     return updatedIssue;
   }
 
   async deleteIssue(issueId: string): Promise<void> {
+    console.log("[Issue Service] === DELETE ISSUE START ===");
+    console.log("[Issue Service] Issue ID:", issueId);
+
     const issues = store.get("issues");
     const filteredIssues = issues.filter((issue) => issue.id !== issueId);
     store.set("issues", filteredIssues);
+    console.log("[Issue Service] Removed from store");
 
     // Delete from file system
+    console.log("[Issue Service] Deleting from file system...");
     await storageManager.deleteIssue(issueId);
+
+    console.log("[Issue Service] ✓ Issue deleted successfully");
+    console.log("[Issue Service] === DELETE ISSUE END ===");
   }
 
   async updateSyncStatus(

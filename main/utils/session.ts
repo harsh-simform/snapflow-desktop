@@ -6,6 +6,7 @@
 import Store from "electron-store";
 import { authService } from "../services/auth";
 import { getSupabase } from "./supabase";
+import { storageManager } from "./storage";
 
 interface User {
   id: string;
@@ -40,6 +41,7 @@ console.log("[Session Store] Path:", sessionStore.path);
 class SessionManager {
   private currentUser: User | null = null;
   private sessionListenerInitialized = false;
+  private isClearing = false; // Flag to prevent circular clearUser calls
 
   /**
    * Initialize session from persistent storage
@@ -78,6 +80,12 @@ class SessionManager {
         const user = await authService.getCurrentUser();
         if (user) {
           this.currentUser = user;
+
+          // Set current user in storage manager for user-specific paths
+          storageManager.setCurrentUser(user.id);
+          // Ensure user-specific directories exist
+          await storageManager.ensureDirectories();
+
           // Store user data for quick access
           sessionStore.set("user", user);
           sessionStore.set("userId", user.id);
@@ -158,6 +166,11 @@ class SessionManager {
     console.log("[Session] Setting user:", user.email);
     this.currentUser = user;
 
+    // Set current user in storage manager for user-specific paths
+    storageManager.setCurrentUser(user.id);
+    // Ensure user-specific directories exist
+    await storageManager.ensureDirectories();
+
     // Setup auth state listener if not already done
     this.setupAuthStateListener();
 
@@ -195,18 +208,36 @@ class SessionManager {
    * Clear user session and sign out from Supabase
    */
   async clearUser(): Promise<void> {
-    this.currentUser = null;
+    // Prevent circular calls from auth state listener
+    if (this.isClearing) {
+      console.log("[Session] clearUser already in progress, skipping");
+      return;
+    }
 
-    // Clear from persistent storage
-    sessionStore.set("user", null);
-    sessionStore.set("userId", null);
-    sessionStore.set("supabaseSession", null);
+    console.log("[Session] Clearing user session...");
+    this.isClearing = true;
 
-    // Sign out from Supabase
     try {
-      await authService.logout();
-    } catch (error) {
-      console.error("Error signing out from Supabase:", error);
+      this.currentUser = null;
+
+      // Clear current user from storage manager
+      storageManager.clearCurrentUser();
+
+      // Clear from persistent storage
+      sessionStore.set("user", null);
+      sessionStore.set("userId", null);
+      sessionStore.set("supabaseSession", null);
+
+      // Sign out from Supabase
+      try {
+        await authService.logout();
+        console.log("[Session] ✓ Supabase logout complete");
+      } catch (error) {
+        console.error("[Session] Error signing out from Supabase:", error);
+      }
+    } finally {
+      this.isClearing = false;
+      console.log("[Session] ✓ Session cleared");
     }
   }
 

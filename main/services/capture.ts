@@ -29,6 +29,16 @@ export class CaptureService {
   } | null = null;
   private readonly PERMISSION_CACHE_DURATION = 60000; // 60 seconds (1 minute)
 
+  // Recording state
+  private recordingWindow: BrowserWindow | null = null;
+  private recordingBounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null = null;
+  private recordingStartTime: number | null = null;
+
   /**
    * Clear the permission cache to force a fresh check
    * Useful when user grants permission and we want to detect it immediately
@@ -482,6 +492,189 @@ export class CaptureService {
         name: source.name,
         thumbnail: source.thumbnail.toDataURL(),
       }));
+  }
+
+  /**
+   * Start screen recording for a specific region
+   */
+  async startRecording(bounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }): Promise<void> {
+    if (this.recordingWindow) {
+      throw new Error("Recording already in progress");
+    }
+
+    this.recordingBounds = bounds;
+    this.recordingStartTime = Date.now();
+
+    // Create a hidden window that will handle the recording
+    this.recordingWindow = new BrowserWindow({
+      show: false,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+      },
+    });
+
+    // Get screen source for recording
+    const sources = await desktopCapturer.getSources({
+      types: ["screen"],
+      thumbnailSize: { width: 1, height: 1 },
+    });
+
+    if (sources.length === 0) {
+      throw new Error("No screen sources available for recording");
+    }
+
+    const primarySource = sources[0];
+
+    // Load HTML content that will handle the recording
+    await this.recordingWindow.loadURL(
+      `data:text/html,${encodeURIComponent(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+        </head>
+        <body>
+          <script>
+            let mediaRecorder;
+            let recordedChunks = [];
+
+            async function startRecording() {
+              try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                  audio: false,
+                  video: {
+                    mandatory: {
+                      chromeMediaSource: 'desktop',
+                      chromeMediaSourceId: '${primarySource.id}',
+                      minWidth: ${bounds.width},
+                      maxWidth: ${bounds.width},
+                      minHeight: ${bounds.height},
+                      maxHeight: ${bounds.height}
+                    }
+                  }
+                });
+
+                mediaRecorder = new MediaRecorder(stream, {
+                  mimeType: 'video/webm;codecs=vp9',
+                  videoBitsPerSecond: 2500000
+                });
+
+                mediaRecorder.ondataavailable = (e) => {
+                  if (e.data.size > 0) {
+                    recordedChunks.push(e.data);
+                  }
+                };
+
+                mediaRecorder.onstop = () => {
+                  const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                  const reader = new FileReader();
+                  reader.onloadend = () => {
+                    window.electronAPI?.sendRecordingData(reader.result);
+                  };
+                  reader.readAsDataURL(blob);
+                };
+
+                mediaRecorder.start(1000); // Capture in 1-second chunks
+                console.log('Recording started');
+              } catch (error) {
+                console.error('Error starting recording:', error);
+              }
+            }
+
+            startRecording();
+          </script>
+        </body>
+        </html>
+      `)}`
+    );
+
+    console.log("[Recording] Started recording");
+  }
+
+  /**
+   * Stop screen recording and save the video
+   */
+  async stopRecording(): Promise<{
+    issueId: string;
+    filePath: string;
+    thumbnailPath: string;
+    duration: number;
+  }> {
+    if (!this.recordingWindow || !this.recordingBounds) {
+      throw new Error("No recording in progress");
+    }
+
+    return new Promise((resolve, reject) => {
+      const duration = this.recordingStartTime
+        ? Date.now() - this.recordingStartTime
+        : 0;
+
+      // Stop the media recorder
+      this.recordingWindow!.webContents.executeJavaScript(`
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+          mediaRecorder.stop();
+        }
+      `);
+
+      // Wait for the recording data
+      const issueId = `rec_${Date.now()}`;
+
+      // Set up a timeout in case recording data never comes
+      const timeout = setTimeout(() => {
+        if (this.recordingWindow) {
+          this.recordingWindow.close();
+          this.recordingWindow = null;
+        }
+        this.recordingBounds = null;
+        this.recordingStartTime = null;
+        reject(new Error("Recording stop timeout"));
+      }, 10000);
+
+      // For now, create a placeholder response
+      // In a full implementation, we'd wait for the actual video data
+      const tempFilePath = storageManager.getRecordingPath(issueId);
+      const tempThumbnailPath = storageManager.getThumbnailPath(issueId);
+
+      setTimeout(() => {
+        clearTimeout(timeout);
+        if (this.recordingWindow) {
+          this.recordingWindow.close();
+          this.recordingWindow = null;
+        }
+        this.recordingBounds = null;
+        this.recordingStartTime = null;
+
+        resolve({
+          issueId,
+          filePath: tempFilePath,
+          thumbnailPath: tempThumbnailPath,
+          duration,
+        });
+      }, 1000);
+    });
+  }
+
+  /**
+   * Save recording with metadata
+   */
+  async saveRecording(
+    issueId: string,
+    videoData: Buffer,
+    _bounds: { x: number; y: number; width: number; height: number }
+  ): Promise<{ filePath: string; thumbnailPath: string }> {
+    const filePath = await storageManager.saveFile(issueId, videoData, "webm");
+
+    // Generate thumbnail from first frame
+    // For now, create a placeholder thumbnail
+    const thumbnailPath = storageManager.getThumbnailPath(issueId);
+
+    return { filePath, thumbnailPath };
   }
 }
 

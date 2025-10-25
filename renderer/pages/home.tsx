@@ -24,6 +24,7 @@ import {
   DialogTitle,
   DialogVisuallyHidden,
 } from "../components/ui/Dialog";
+import { WindowControls } from "../components/ui/WindowControls";
 import { useStore } from "../store/useStore";
 import { LocalImage } from "../components/ui/LocalImage";
 import type { Issue } from "../types";
@@ -58,14 +59,20 @@ export default function HomePage() {
 
   const loadData = async () => {
     try {
+      console.log("Loading user data...");
       const userResult = await window.api.getUser();
+      console.log("User result:", userResult);
+
       if (userResult.success && userResult.data) {
         setUser(userResult.data);
+        console.log("User loaded:", userResult.data.email);
+
         const issuesResult = await window.api.listIssues(userResult.data.id);
         if (issuesResult.success) {
           setIssues(issuesResult.data || []);
         }
       } else {
+        console.error("No user data, redirecting to auth");
         router.push("/auth");
       }
     } catch (error) {
@@ -397,14 +404,45 @@ export default function HomePage() {
 
   const handleLogout = async () => {
     try {
-      await window.api.logout();
+      console.log("[LOGOUT] === LOGOUT FLOW START ===");
+      console.log("[LOGOUT] Current user:", user?.email);
+
+      // Clear local state immediately
+      console.log("[LOGOUT] Clearing local state...");
       setUser(null);
       setIssues([]);
-      router.push("/auth");
+
+      console.log("[LOGOUT] Calling window.api.logout...");
+      const result = await window.api.logout();
+
+      console.log("[LOGOUT] Logout IPC returned");
+      console.log("[LOGOUT] Result:", JSON.stringify(result, null, 2));
+
+      if (result.success) {
+        console.log("[LOGOUT] ✓ Logout successful!");
+      }
+
       toast.success("Logged out successfully");
+
+      // Navigate using Next.js router
+      console.log("[LOGOUT] Starting navigation to /auth...");
+      console.log("[LOGOUT] Calling router.push('/auth')...");
+      await router.push("/auth");
+      console.log("[LOGOUT] ✓ router.push completed");
+      console.log("[LOGOUT] === LOGOUT FLOW END ===");
     } catch (error) {
-      console.error("Logout failed:", error);
-      toast.error("Failed to logout");
+      console.error("[LOGOUT] ✗ Logout exception:", error);
+      console.error(
+        "[LOGOUT] Error details:",
+        JSON.stringify(error, Object.getOwnPropertyNames(error), 2)
+      );
+      // Clear state and redirect even on error
+      setUser(null);
+      setIssues([]);
+      toast.error("Logged out");
+      console.log("[LOGOUT] Attempting navigation after error...");
+      router.push("/auth");
+      console.log("[LOGOUT] === LOGOUT FLOW END (with error) ===");
     }
   };
 
@@ -452,8 +490,15 @@ export default function HomePage() {
         <title>Home - SnapFlow</title>
       </Head>
       <div className="min-h-screen bg-gray-950">
-        {/* Header */}
-        <header className="glass-strong border-b border-white/10 sticky top-0 z-10 backdrop-blur-xl">
+        {/* Titlebar with Window Controls */}
+        <div className="glass-strong border-b border-white/5 sticky top-0 z-20 backdrop-blur-xl">
+          <div className="flex items-center justify-end h-8 px-4">
+            <WindowControls />
+          </div>
+        </div>
+
+        {/* Header/Navbar */}
+        <header className="glass-strong border-b border-white/10 sticky top-8 z-10 backdrop-blur-xl">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
             <div className="flex items-center justify-between">
               <motion.div
@@ -514,33 +559,20 @@ export default function HomePage() {
                   Settings
                 </Button>
                 <div className="flex items-center space-x-3 pl-3 border-l border-gray-700/50">
-                  <div className="w-9 h-9 bg-blue-600 rounded-full flex items-center justify-center text-white font-semibold shadow-lg">
-                    {user?.name?.charAt(0).toUpperCase()}
+                  <div className="flex items-center space-x-3">
+                    <div className="w-9 h-9 bg-blue-600 rounded-full flex items-center justify-center text-white font-semibold shadow-lg">
+                      {user?.name?.charAt(0).toUpperCase()}
+                    </div>
+                    <span className="text-sm font-medium text-gray-300">
+                      {user?.name}
+                    </span>
                   </div>
-                  <span className="text-sm font-medium text-gray-300">
-                    {user?.name}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
+                  <button
                     onClick={handleLogout}
-                    title="Logout"
-                    leftIcon={
-                      <svg
-                        className="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-                        />
-                      </svg>
-                    }
-                  />
+                    className="h-8 px-3 text-sm inline-flex items-center justify-center rounded-lg font-medium transition-all duration-200 bg-transparent text-gray-400 hover:bg-gray-800/50 hover:text-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-500/50"
+                  >
+                    Logout
+                  </button>
                 </div>
               </motion.div>
             </div>
@@ -743,13 +775,7 @@ export default function HomePage() {
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.4, delay: 0.3 }}
               >
-                <NoSnapsEmptyState
-                  onCapture={() => {
-                    toast.info(
-                      "Use the system tray menu or keyboard shortcuts to capture screenshots"
-                    );
-                  }}
-                />
+                <NoSnapsEmptyState />
               </motion.div>
             ) : (
               <NoResultsEmptyState

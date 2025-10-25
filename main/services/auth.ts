@@ -1,5 +1,5 @@
 import { getSupabase } from "../utils/supabase";
-import { AuthError, User as SupabaseUser } from "@supabase/supabase-js";
+import { User as SupabaseUser } from "@supabase/supabase-js";
 
 interface User {
   id: string;
@@ -18,13 +18,19 @@ export class AuthService {
     email: string,
     password: string
   ): Promise<User> {
+    console.log("[Auth Service] === CREATE USER START ===");
+    console.log("[Auth Service] Name:", name);
+    console.log("[Auth Service] Email:", email);
+
     const supabase = getSupabase();
     if (!supabase) {
+      console.error("[Auth Service] ✗ Supabase not configured");
       throw new Error(
         "Supabase is not configured. Please check your environment variables."
       );
     }
 
+    console.log("[Auth Service] Calling supabase.auth.signUp...");
     // Sign up user with Supabase Auth
     const { data, error } = await supabase.auth.signUp({
       email,
@@ -37,6 +43,7 @@ export class AuthService {
     });
 
     if (error) {
+      console.error("[Auth Service] ✗ SignUp error:", error.message);
       if (error.message.includes("already registered")) {
         throw new Error("User with this email already exists");
       }
@@ -44,37 +51,53 @@ export class AuthService {
     }
 
     if (!data.user) {
+      console.error("[Auth Service] ✗ No user data returned");
       throw new Error("Failed to create user");
     }
 
-    return this.mapSupabaseUser(data.user);
+    const user = this.mapSupabaseUser(data.user);
+    console.log("[Auth Service] ✓ User created successfully");
+    console.log("[Auth Service] User ID:", user.id);
+    console.log("[Auth Service] === CREATE USER END ===");
+    return user;
   }
 
   /**
    * Login with email and password using Supabase Auth
    */
   async login(email: string, password: string): Promise<User> {
+    console.log("[Auth Service] === LOGIN START ===");
+    console.log("[Auth Service] Email:", email);
+
     const supabase = getSupabase();
     if (!supabase) {
+      console.error("[Auth Service] ✗ Supabase not configured");
       throw new Error(
         "Supabase is not configured. Please check your environment variables."
       );
     }
 
+    console.log("[Auth Service] Calling supabase.auth.signInWithPassword...");
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
     if (error) {
+      console.error("[Auth Service] ✗ Login error:", error.message);
       throw new Error("Invalid email or password");
     }
 
     if (!data.user) {
+      console.error("[Auth Service] ✗ No user data returned");
       throw new Error("Failed to sign in");
     }
 
-    return this.mapSupabaseUser(data.user);
+    const user = this.mapSupabaseUser(data.user);
+    console.log("[Auth Service] ✓ Login successful");
+    console.log("[Auth Service] User ID:", user.id);
+    console.log("[Auth Service] === LOGIN END ===");
+    return user;
   }
 
   /**
@@ -121,8 +144,11 @@ export class AuthService {
    * Get current authenticated user
    */
   async getCurrentUser(): Promise<User | null> {
+    console.log("[Auth Service] Getting current user...");
+
     const supabase = getSupabase();
     if (!supabase) {
+      console.warn("[Auth Service] Supabase not configured");
       return null;
     }
 
@@ -131,11 +157,19 @@ export class AuthService {
       error,
     } = await supabase.auth.getUser();
 
-    if (error || !user) {
+    if (error) {
+      console.error("[Auth Service] Error getting user:", error.message);
       return null;
     }
 
-    return this.mapSupabaseUser(user);
+    if (!user) {
+      console.log("[Auth Service] No current user");
+      return null;
+    }
+
+    const mappedUser = this.mapSupabaseUser(user);
+    console.log("[Auth Service] ✓ Current user:", mappedUser.email);
+    return mappedUser;
   }
 
   /**
@@ -161,8 +195,13 @@ export class AuthService {
     userId: string,
     updates: Partial<Pick<User, "name" | "email">>
   ): Promise<User> {
+    console.log("[Auth Service] === UPDATE USER START ===");
+    console.log("[Auth Service] User ID:", userId);
+    console.log("[Auth Service] Updates:", JSON.stringify(updates));
+
     const supabase = getSupabase();
     if (!supabase) {
+      console.error("[Auth Service] ✗ Supabase not configured");
       throw new Error(
         "Supabase is not configured. Please check your environment variables."
       );
@@ -178,9 +217,11 @@ export class AuthService {
       updateData.data = { name: updates.name };
     }
 
+    console.log("[Auth Service] Calling supabase.auth.updateUser...");
     const { data, error } = await supabase.auth.updateUser(updateData);
 
     if (error) {
+      console.error("[Auth Service] ✗ Update error:", error.message);
       if (error.message.includes("already in use")) {
         throw new Error("Email is already in use");
       }
@@ -188,10 +229,14 @@ export class AuthService {
     }
 
     if (!data.user) {
+      console.error("[Auth Service] ✗ No user data returned");
       throw new Error("Failed to update user");
     }
 
-    return this.mapSupabaseUser(data.user);
+    const user = this.mapSupabaseUser(data.user);
+    console.log("[Auth Service] ✓ User updated successfully");
+    console.log("[Auth Service] === UPDATE USER END ===");
+    return user;
   }
 
   /**
@@ -241,7 +286,7 @@ export class AuthService {
   /**
    * Delete user account
    */
-  async deleteUser(userId: string): Promise<void> {
+  async deleteUser(_userId: string): Promise<void> {
     const supabase = getSupabase();
     if (!supabase) {
       throw new Error(
@@ -266,15 +311,22 @@ export class AuthService {
    * Logout - signs out user from Supabase
    */
   async logout(): Promise<void> {
+    console.log("[Auth Service] === LOGOUT START ===");
+
     const supabase = getSupabase();
     if (!supabase) {
+      console.warn("[Auth Service] Supabase not configured");
       return;
     }
 
+    console.log("[Auth Service] Calling supabase.auth.signOut...");
     const { error } = await supabase.auth.signOut();
     if (error) {
-      console.error("Logout error:", error);
+      console.error("[Auth Service] ✗ Logout error:", error.message);
+    } else {
+      console.log("[Auth Service] ✓ Logout successful");
     }
+    console.log("[Auth Service] === LOGOUT END ===");
   }
 
   /**
@@ -288,7 +340,7 @@ export class AuthService {
 
     const {
       data: { session },
-      error,
+      error: _error,
     } = await supabase.auth.getSession();
     return session;
   }
