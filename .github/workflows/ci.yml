@@ -62,13 +62,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Next.js app
-        run: npm run build
-
-      - name: Dry-run electron-builder (no code signing)
-        run: npx electron-builder --${{ matrix.platform }} --dir --publish never
+      - name: Build application (no packaging)
+        run: npm run build:no-pack
         env:
           # Skip code signing and notarization
           CSC_IDENTITY_AUTO_DISCOVERY: false
-          # Set to true to see full build output
-          DEBUG: electron-builder

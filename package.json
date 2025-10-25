@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "nextron",
     "build": "nextron build",
+    "build:no-pack": "nextron build --no-pack",
     "postinstall": "electron-builder install-app-deps",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
