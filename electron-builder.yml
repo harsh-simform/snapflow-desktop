@@ -113,12 +113,13 @@ extraMetadata:
   main: app/background.js
 
 # Auto-update configuration
-publish:
-  provider: github
-  owner: harsh-simform
-  repo: snapflow-desktop
-  private: false
-  releaseType: release
+# Publishing is handled by GitHub Actions workflow
+# publish:
+#   provider: github
+#   owner: harsh-simform
+#   repo: snapflow-desktop
+#   private: false
+#   releaseType: release
 
 # Compression
 compression: normal
