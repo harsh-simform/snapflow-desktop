@@ -20,8 +20,10 @@
 - [Usage Guide](#-usage-guide)
 - [Project Structure](#-project-structure)
 - [Available Scripts](#-available-scripts)
+- [Release Process](#-release-process)
+- [Code Quality](#-code-quality)
 - [Troubleshooting](#-troubleshooting)
-- [Contributing](#-contributing)
+- [Development Team Guidelines](#-development-team-guidelines)
 - [License](#-license)
 
 ---
@@ -504,6 +506,198 @@ npm run type-check       # Run TypeScript type checking
 ```bash
 npm run build            # Build production app (macOS/Windows/Linux)
 ```
+
+---
+
+## 📦 Release Process
+
+SnapFlow uses GitHub Actions for automated builds and releases across macOS, Windows, and Linux platforms.
+
+### CI/CD Workflows
+
+The project includes two GitHub Actions workflows:
+
+#### 1. **CI Workflow** (`.github/workflows/ci.yml`)
+
+- **Triggers**: Pushes and PRs to `main` and `develop` branches
+- **Purpose**: Validate code quality and ensure builds work
+- **Actions**:
+  - Runs linter (`npm run lint`)
+  - Runs type checking (`npm run type-check`)
+  - Runs format checking (`npm run format:check`)
+  - Builds application on all platforms (macOS, Windows, Linux)
+- **Note**: Builds succeed but does NOT publish artifacts
+
+#### 2. **Release Workflow** (`.github/workflows/release.yml`)
+
+- **Triggers**:
+  - Git tags matching `v*.*.*` (e.g., `v1.0.0`)
+  - Manual workflow dispatch
+- **Purpose**: Build and publish release artifacts
+- **Actions**:
+  - Builds for macOS, Windows, and Linux
+  - Creates GitHub draft release with artifacts
+  - Uploads platform-specific installers
+
+### Creating a Release
+
+Follow these steps to create a new release:
+
+#### Step 1: Update Version
+
+Update the version in `package.json`:
+
+```json
+{
+  "version": "1.0.0" // Update to your new version
+}
+```
+
+Also update the DMG title in `electron-builder.yml` if needed:
+
+```yaml
+dmg:
+  title: SnapFlow 1.0.0  // Match package.json version
+```
+
+#### Step 2: Commit Version Changes
+
+```bash
+git add package.json electron-builder.yml
+git commit -m "chore: bump version to 1.0.0"
+git push origin main
+```
+
+#### Step 3: Create and Push Git Tag
+
+```bash
+# Create annotated tag
+git tag -a v1.0.0 -m "Release v1.0.0"
+
+# Push tag to trigger release workflow
+git push origin v1.0.0
+```
+
+#### Step 4: Monitor Release Build
+
+1. Go to your repository's **Actions** tab
+2. Watch the "Build and Release" workflow progress
+3. Build typically takes 10-15 minutes (runs on 3 platforms in parallel)
+
+#### Step 5: Publish Release
+
+Once the workflow completes:
+
+1. Go to **Releases** in your GitHub repository
+2. Find the draft release created by the workflow
+3. Review the release notes (auto-generated from commits)
+4. Edit release notes if needed
+5. Click **Publish release**
+
+### Release Artifacts
+
+Each release includes installers for all platforms:
+
+#### macOS (Universal - Intel + Apple Silicon)
+
+- **DMG**: `SnapFlow-{version}-universal.dmg` - Standard installer
+- **ZIP**: `SnapFlow-{version}-universal-mac.zip` - Portable archive
+- **Auto-update files**: `.dmg.blockmap` for delta updates
+
+#### Windows
+
+- **NSIS Installer**: `SnapFlow Setup {version}.exe` - Standard installer
+  - Supports both x64 and ia32 architectures
+  - Customizable installation directory
+  - Desktop and Start Menu shortcuts
+- **Portable**: `SnapFlow {version}.exe` - No installation required
+
+#### Linux
+
+- **AppImage**: `SnapFlow-{version}.AppImage` - Universal Linux package
+- **DEB**: `snapflow-desktop_{version}_amd64.deb` - Debian/Ubuntu installer
+- **RPM**: `snapflow-desktop-{version}.x86_64.rpm` - RHEL/Fedora installer
+
+### Release Checklist
+
+Before creating a release, ensure:
+
+- [ ] All features are complete and tested
+- [ ] Version updated in `package.json` and `electron-builder.yml`
+- [ ] All CI checks pass on `main` branch
+- [ ] Changelog or release notes prepared
+- [ ] Code is formatted (`npm run format`)
+- [ ] Linting passes (`npm run lint`)
+- [ ] Type checking passes (`npm run type-check`)
+- [ ] Local build succeeds (`npm run build`)
+
+### Manual Release (Alternative)
+
+If you need to trigger a release without creating a tag:
+
+1. Go to **Actions** tab in GitHub
+2. Select "Build and Release" workflow
+3. Click **Run workflow**
+4. Enter version (e.g., `v1.0.0`)
+5. Click **Run workflow** button
+
+### Code Signing (Optional)
+
+#### macOS Code Signing
+
+For distributing outside the App Store, configure these secrets in GitHub:
+
+```yaml
+# In .github/workflows/release.yml
+APPLE_ID: ${{ secrets.APPLE_ID }}
+APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+CSC_LINK: ${{ secrets.MAC_CERTS }}
+CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
+```
+
+**Note**: Currently disabled in CI. Builds succeed without signing but may show "unidentified developer" warning on macOS.
+
+#### Windows Code Signing
+
+Add these secrets for Windows code signing:
+
+```yaml
+CSC_LINK: ${{ secrets.WIN_CERT }}
+CSC_KEY_PASSWORD: ${{ secrets.WIN_CERT_PASSWORD }}
+```
+
+### Troubleshooting Releases
+
+#### Build Fails with "GH_TOKEN not set"
+
+**Solution**: This is expected behavior and has been fixed. The CI workflow now includes `GH_TOKEN` to satisfy electron-builder's CI detection.
+
+#### Release Not Appearing
+
+**Solution**: Check that:
+
+1. Tag format is correct: `v*.*.*` (must start with `v`)
+2. Workflow completed successfully (check Actions tab)
+3. Draft release was created (check Releases tab)
+
+#### Code Signing Warnings
+
+**Solution**:
+
+- **macOS**: Users may see "unidentified developer" warning. Users need to right-click → Open
+- **Windows**: Users may see SmartScreen warning. Click "More info" → "Run anyway"
+- **Production**: Configure code signing secrets for trusted distribution
+
+#### Platform-Specific Build Fails
+
+**Solution**:
+
+1. Check the specific platform job logs in GitHub Actions
+2. Common issues:
+   - **macOS**: Code signing certificate issues
+   - **Windows**: NSIS configuration problems
+   - **Linux**: Missing dependencies (usually auto-installed)
 
 ---
 
