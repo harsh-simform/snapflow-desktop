@@ -283,6 +283,50 @@ export class SyncService {
   }
 
   /**
+   * Download a file from cloud storage URL to local storage
+   */
+  private async downloadFileFromCloud(
+    cloudUrl: string,
+    issueId: string,
+    fileName: string
+  ): Promise<string | null> {
+    try {
+      console.log(`[Sync] Downloading file from cloud: ${cloudUrl}`);
+
+      // Fetch file from URL
+      const response = await fetch(cloudUrl);
+      if (!response.ok) {
+        console.error(
+          `[Sync] Failed to download file: ${response.status} ${response.statusText}`
+        );
+        return null;
+      }
+
+      // Get file data as buffer
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      console.log(`[Sync] Downloaded ${buffer.length} bytes`);
+
+      // Import storage manager to save the file
+      const { storageManager } = await import("../utils/storage");
+
+      // Save to local storage
+      const filePath = await storageManager.saveCapture(
+        issueId,
+        fileName,
+        buffer
+      );
+
+      console.log(`[Sync] ✓ File saved to local storage: ${filePath}`);
+      return filePath;
+    } catch (error) {
+      console.error("[Sync] Error downloading file from cloud:", error);
+      return null;
+    }
+  }
+
+  /**
    * Sync all local issues to Supabase
    */
   async syncAllToCloud(userId: string): Promise<SyncResult> {
@@ -542,6 +586,7 @@ export class SyncService {
 
   /**
    * Fetch issues from Supabase cloud and merge with local data
+   * Downloads files from cloud if they don't exist locally
    */
   async fetchFromCloud(userId: string): Promise<SyncResult> {
     const supabase = getSupabase();
@@ -561,6 +606,10 @@ export class SyncService {
       errors: [],
     };
 
+    // Create sync history record
+    const syncHistoryId = await this.createSyncHistory(userId, "pull", 0);
+    result.syncHistoryId = syncHistoryId || undefined;
+
     try {
       // Fetch all issues from Supabase for this user
       const { data: cloudIssues, error } = await supabase
@@ -574,7 +623,26 @@ export class SyncService {
       }
 
       if (!cloudIssues || cloudIssues.length === 0) {
+        console.log("[Sync] No cloud issues found for user");
+        // Update sync history
+        if (syncHistoryId) {
+          await this.updateSyncHistory(syncHistoryId, {
+            status: "completed",
+            synced_count: 0,
+            failed_count: 0,
+          });
+        }
         return result;
+      }
+
+      console.log(`[Sync] Found ${cloudIssues.length} cloud issues`);
+
+      // Update total count in sync history
+      if (syncHistoryId) {
+        await this.updateSyncHistory(syncHistoryId, {
+          synced_count: 0,
+          failed_count: 0,
+        });
       }
 
       // Get local issues to check for conflicts
@@ -584,14 +652,77 @@ export class SyncService {
       // Merge cloud issues with local data
       for (const cloudIssue of cloudIssues) {
         try {
+          console.log(
+            `[Sync] Processing cloud issue: ${cloudIssue.id} - ${cloudIssue.title}`
+          );
+
+          let localFilePath = cloudIssue.file_path;
+          let localThumbnailPath = cloudIssue.thumbnail_path;
+
+          // Check if this is a cloud-only issue (not in local storage)
+          if (!localIssueIds.has(cloudIssue.id)) {
+            console.log(
+              `[Sync] Cloud-only issue detected: ${cloudIssue.id}, downloading files...`
+            );
+
+            // Download main file from cloud if available
+            if (cloudIssue.cloud_file_url) {
+              const fileName = path.basename(
+                cloudIssue.file_path || "screenshot.png"
+              );
+              const downloadedPath = await this.downloadFileFromCloud(
+                cloudIssue.cloud_file_url,
+                cloudIssue.id,
+                fileName
+              );
+              if (downloadedPath) {
+                localFilePath = downloadedPath;
+                console.log(`[Sync] ✓ Main file downloaded: ${downloadedPath}`);
+              } else {
+                console.warn(
+                  `[Sync] Failed to download main file for issue ${cloudIssue.id}`
+                );
+                // Skip this issue if we can't download the main file
+                result.failedCount++;
+                result.errors.push(
+                  `Failed to download main file for issue ${cloudIssue.id}`
+                );
+                continue;
+              }
+            } else {
+              console.warn(
+                `[Sync] No cloud URL for issue ${cloudIssue.id}, skipping`
+              );
+              continue;
+            }
+
+            // Download thumbnail if available
+            if (cloudIssue.cloud_thumbnail_url) {
+              const thumbnailFileName = path.basename(
+                cloudIssue.thumbnail_path || "thumbnail.png"
+              );
+              const downloadedThumbnail = await this.downloadFileFromCloud(
+                cloudIssue.cloud_thumbnail_url,
+                cloudIssue.id,
+                thumbnailFileName
+              );
+              if (downloadedThumbnail) {
+                localThumbnailPath = downloadedThumbnail;
+                console.log(
+                  `[Sync] ✓ Thumbnail downloaded: ${downloadedThumbnail}`
+                );
+              }
+            }
+          }
+
           const issueData: Record<string, unknown> = {
             id: cloudIssue.id,
             title: cloudIssue.title,
             description: cloudIssue.description,
             type: cloudIssue.type as "screenshot" | "recording",
             timestamp: cloudIssue.timestamp,
-            filePath: cloudIssue.file_path,
-            thumbnailPath: cloudIssue.thumbnail_path,
+            filePath: localFilePath,
+            thumbnailPath: localThumbnailPath,
             cloudFileUrl: cloudIssue.cloud_file_url,
             cloudThumbnailUrl: cloudIssue.cloud_thumbnail_url,
             syncStatus: "synced" as const,
@@ -602,18 +733,31 @@ export class SyncService {
 
           if (localIssueIds.has(cloudIssue.id)) {
             // Update existing local issue
+            console.log(
+              `[Sync] Updating existing local issue: ${cloudIssue.id}`
+            );
             await issueService.updateIssue(cloudIssue.id, issueData);
           } else {
-            // This is a cloud-only issue - we'd need to download the file
-            // For now, we'll skip it as we don't have the actual file
-            // In a full implementation, you'd download the file from cloud storage
-            console.log(
-              `Skipping cloud-only issue ${cloudIssue.id} - file not available locally`
-            );
-            continue;
+            // Create new local issue with downloaded files
+            console.log(`[Sync] Creating new local issue: ${cloudIssue.id}`);
+            // We need to create the issue directly in the store
+            // Import Store to directly manipulate the issues
+            const Store = (await import("electron-store")).default;
+            const store = new Store<{ issues: any[] }>({
+              name: "snapflow-issues",
+              defaults: { issues: [] },
+            });
+            const issues = store.get("issues");
+            issues.push(issueData);
+            store.set("issues", issues);
+
+            // Save metadata to file system
+            const { storageManager } = await import("../utils/storage");
+            await storageManager.saveMetadata(cloudIssue.id, issueData);
           }
 
           result.syncedCount++;
+          console.log(`[Sync] ✓ Issue synced: ${cloudIssue.id}`);
         } catch (error) {
           result.failedCount++;
           result.errors.push(
@@ -621,17 +765,41 @@ export class SyncService {
               error instanceof Error ? error.message : String(error)
             }`
           );
-          console.error(`Failed to sync issue ${cloudIssue.id}:`, error);
+          console.error(`[Sync] Failed to sync issue ${cloudIssue.id}:`, error);
         }
       }
 
       result.success = result.failedCount === 0;
+
+      // Update sync history
+      if (syncHistoryId) {
+        await this.updateSyncHistory(syncHistoryId, {
+          status: result.success ? "completed" : "failed",
+          synced_count: result.syncedCount,
+          failed_count: result.failedCount,
+          errors: result.errors,
+        });
+      }
+
+      console.log(
+        `[Sync] Fetch from cloud complete: ${result.syncedCount} synced, ${result.failedCount} failed`
+      );
     } catch (error) {
       result.success = false;
       result.errors.push(
         error instanceof Error ? error.message : String(error)
       );
-      console.error("Fetch error:", error);
+      console.error("[Sync] Fetch error:", error);
+
+      // Update sync history
+      if (syncHistoryId) {
+        await this.updateSyncHistory(syncHistoryId, {
+          status: "failed",
+          synced_count: result.syncedCount,
+          failed_count: result.failedCount,
+          errors: result.errors,
+        });
+      }
     }
 
     return result;

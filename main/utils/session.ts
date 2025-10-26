@@ -7,6 +7,7 @@ import Store from "electron-store";
 import { authService } from "../services/auth";
 import { getSupabase } from "./supabase";
 import { storageManager } from "./storage";
+import { syncService } from "../services/sync";
 
 interface User {
   id: string;
@@ -44,15 +45,35 @@ class SessionManager {
   private isClearing = false; // Flag to prevent circular clearUser calls
 
   /**
+   * Sync from cloud on login to restore user's screenshots
+   * This ensures multi-account support
+   */
+  private async syncFromCloudOnLogin(userId: string): Promise<void> {
+    try {
+      console.log("[Session] Starting cloud sync for user:", userId);
+      const result = await syncService.fetchFromCloud(userId);
+      if (result.success) {
+        console.log(
+          `[Session] ✓ Cloud sync complete: ${result.syncedCount} items synced`
+        );
+      } else {
+        console.warn(
+          `[Session] Cloud sync completed with errors: ${result.errors.join(", ")}`
+        );
+      }
+    } catch (error) {
+      console.error("[Session] Cloud sync failed:", error);
+      // Don't throw - allow login to continue even if sync fails
+    }
+  }
+
+  /**
    * Initialize session from persistent storage
    * Restores Supabase session if it exists
    * Call this when app starts
    */
   async initialize(): Promise<void> {
     console.log("[Session] Initializing session...");
-
-    // Setup auth state change listener first
-    this.setupAuthStateListener();
 
     const supabase = getSupabase();
     if (!supabase) {
@@ -69,6 +90,8 @@ class SessionManager {
     if (error) {
       console.error("[Session] Error getting session:", error);
       await this.clearUser();
+      // Setup auth state listener after handling error
+      this.setupAuthStateListener();
       return;
     }
 
@@ -96,6 +119,12 @@ class SessionManager {
             expiresAt: session.expires_at || 0,
           });
           console.log("✓ Session restored successfully for:", user.email);
+
+          // Setup auth state listener AFTER successful session restoration
+          this.setupAuthStateListener();
+
+          // Sync from cloud after session restore
+          await this.syncFromCloudOnLogin(user.id);
           return;
         } else {
           console.warn("[Session] Session exists but no user found");
@@ -112,6 +141,9 @@ class SessionManager {
       sessionStore.set("userId", null);
       sessionStore.set("supabaseSession", null);
     }
+
+    // Setup auth state listener after session check
+    this.setupAuthStateListener();
   }
 
   /**
@@ -192,6 +224,9 @@ class SessionManager {
         "[Session] Token expires at:",
         new Date((session.expires_at || 0) * 1000).toLocaleString()
       );
+
+      // Sync from cloud after login
+      await this.syncFromCloudOnLogin(user.id);
     } else {
       console.warn("[Session] No Supabase session found - storing user only");
       // Just store user if no session (shouldn't happen normally)
