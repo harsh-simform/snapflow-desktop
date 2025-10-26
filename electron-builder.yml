@@ -45,8 +45,11 @@ mac:
     - target: zip
       arch:
         - universal
-  hardenedRuntime: true
+  hardenedRuntime: false
   gatekeeperAssess: false
+  # Disable signature verification for adhoc-signed builds
+  signIgnore: true
+  identity: null
   entitlements: resources/entitlements.mac.plist
   entitlementsInherit: resources/entitlements.mac.plist
   extendInfo:

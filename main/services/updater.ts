@@ -105,6 +105,15 @@ export class UpdaterService {
     // Disable automatic downloading to give user control
     autoUpdater.autoDownload = false;
 
+    // IMPORTANT: For unsigned/adhoc-signed builds (development/testing)
+    // Disable signature verification to allow updates without Apple Developer certificates
+    // WARNING: Only use this for development. Production apps should be properly signed.
+    // @ts-expect-error - Accessing internal electron-updater property
+    if (autoUpdater.app) {
+      // @ts-expect-error - Accessing internal electron-updater property
+      autoUpdater.app.allowElevation = false;
+    }
+
     this.setupAutoUpdater();
     this.isInitialized = true;
 
@@ -161,6 +170,7 @@ export class UpdaterService {
       log.error("[Updater] Error in auto-updater:", err);
 
       let errorMessage = err.message;
+      let isSignatureError = false;
 
       // Provide user-friendly error messages
       if (
@@ -174,9 +184,24 @@ export class UpdaterService {
       } else if (err.message.includes("EACCES")) {
         errorMessage =
           "Permission denied. Please ensure the app has write permissions.";
+      } else if (
+        err.message.includes("code signature") ||
+        err.message.includes("not signed") ||
+        err.message.includes("signature validation") ||
+        err.message.includes("code object is not signed")
+      ) {
+        isSignatureError = true;
+        errorMessage =
+          "Automatic update failed due to code signature verification. Please download and install the update manually from GitHub.";
       }
 
-      this.sendStatusToWindow("update-error", { message: errorMessage });
+      this.sendStatusToWindow("update-error", {
+        message: errorMessage,
+        isSignatureError,
+        downloadUrl: isSignatureError
+          ? "https://github.com/harsh-simform/snapflow-desktop/releases/latest"
+          : undefined,
+      });
     });
 
     autoUpdater.on("download-progress", (progressObj) => {
