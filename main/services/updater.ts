@@ -4,6 +4,10 @@ import log from "electron-log";
 import fs from "fs";
 import path from "path";
 
+interface WindowWithQuitting extends BrowserWindow {
+  setQuitting?: (value: boolean) => void;
+}
+
 interface PublishConfig {
   provider: string;
   owner: string;
@@ -11,7 +15,7 @@ interface PublishConfig {
 }
 
 export class UpdaterService {
-  private mainWindow: BrowserWindow | null = null;
+  private mainWindow: WindowWithQuitting | null = null;
   private updateDownloaded = false;
   private isInitialized = false;
   private updateInfo: { version: string; releaseDate?: string } | null = null;
@@ -107,7 +111,7 @@ export class UpdaterService {
     log.info("[Updater] Auto-updater service initialized successfully");
   }
 
-  setMainWindow(window: BrowserWindow) {
+  setMainWindow(window: WindowWithQuitting) {
     this.mainWindow = window;
   }
 
@@ -252,8 +256,20 @@ export class UpdaterService {
     if (response === 0) {
       // User chose to install now
       log.info("[Updater] User chose to install update now");
-      // setImmediate ensures all windows are closed before restart
-      autoUpdater.quitAndInstall(false, true);
+
+      // Disable window close prevention before quitting
+      if (this.mainWindow?.setQuitting) {
+        log.info("[Updater] Disabling close prevention");
+        this.mainWindow.setQuitting(true);
+      }
+
+      // Use setTimeout to ensure the dialog is closed before quitting
+      setTimeout(() => {
+        log.info("[Updater] Calling quitAndInstall");
+        // First parameter: isSilent (false = show installer)
+        // Second parameter: isForceRunAfter (true = restart after install)
+        autoUpdater.quitAndInstall(false, true);
+      }, 100);
     } else {
       log.info(
         "[Updater] User chose to install later - will install on next quit"
@@ -287,7 +303,19 @@ export class UpdaterService {
 
   quitAndInstall() {
     if (this.updateDownloaded) {
-      autoUpdater.quitAndInstall(false, true);
+      log.info("[Updater] quitAndInstall called");
+
+      // Disable window close prevention before quitting
+      if (this.mainWindow?.setQuitting) {
+        log.info("[Updater] Disabling close prevention");
+        this.mainWindow.setQuitting(true);
+      }
+
+      // Use setTimeout to ensure current operations complete before quitting
+      setTimeout(() => {
+        log.info("[Updater] Calling quitAndInstall");
+        autoUpdater.quitAndInstall(false, true);
+      }, 100);
     } else {
       throw new Error("No update has been downloaded yet");
     }
