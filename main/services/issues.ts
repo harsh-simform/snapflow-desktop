@@ -21,6 +21,7 @@ interface Issue {
   }[];
   userId: string;
   tags?: string[];
+  [key: string]: unknown;
 }
 
 const store = new Store<{ issues: Issue[] }>({
