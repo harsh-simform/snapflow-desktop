@@ -24,6 +24,7 @@ export interface Issue {
   }[];
   userId: string;
   tags?: string[];
+  [key: string]: unknown;
 }
 
 export interface Connector {
