@@ -553,6 +553,10 @@ export class CaptureService {
     const primarySource = sources[0];
     log.info("[Recording] Using source:", primarySource.id);
 
+    // Get the display's scale factor
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const scaleFactor = primaryDisplay.scaleFactor || 1;
+
     // Store chunks globally in the window
     const recordingHTML = `
       <!DOCTYPE html>
@@ -561,6 +565,7 @@ export class CaptureService {
         <meta charset="UTF-8">
       </head>
       <body>
+        <canvas id="cropCanvas" style="display:none"></canvas>
         <script>
           // Global error handler
           window.onerror = function(message, source, lineno, colno, error) {
@@ -575,29 +580,81 @@ export class CaptureService {
           let mediaRecorder;
           let recordedChunks = [];
           let stream;
+          let screenStream;
+          let animationFrameId;
 
           async function startRecording() {
             try {
               console.log('[Recording HTML] Starting recording...');
+              console.log('[Recording HTML] Crop bounds:', ${JSON.stringify(bounds)});
+              console.log('[Recording HTML] Scale factor:', ${scaleFactor});
 
-              // Get screen stream
-              stream = await navigator.mediaDevices.getUserMedia({
+              // Get full screen stream
+              screenStream = await navigator.mediaDevices.getUserMedia({
                 audio: false,
                 video: {
                   mandatory: {
                     chromeMediaSource: 'desktop',
                     chromeMediaSourceId: '${primarySource.id}',
-                    minWidth: ${bounds.width},
-                    maxWidth: ${bounds.width * 2},
-                    minHeight: ${bounds.height},
-                    maxHeight: ${bounds.height * 2}
+                    minWidth: 1920,
+                    maxWidth: 4096,
+                    minHeight: 1080,
+                    maxHeight: 2160
                   }
                 }
               });
 
-              console.log('[Recording HTML] Stream acquired');
+              console.log('[Recording HTML] Full screen stream acquired');
 
-              // Create MediaRecorder
+              // Create video element to read from the screen stream
+              const video = document.createElement('video');
+              video.srcObject = screenStream;
+              video.play();
+
+              // Wait for video to be ready
+              await new Promise((resolve) => {
+                video.onloadedmetadata = () => {
+                  console.log('[Recording HTML] Video dimensions:', video.videoWidth, 'x', video.videoHeight);
+                  resolve();
+                };
+              });
+
+              // Setup canvas for cropping
+              const canvas = document.getElementById('cropCanvas');
+              const scaleFactor = ${scaleFactor};
+
+              // Canvas dimensions should match the selected area (accounting for scale factor)
+              canvas.width = ${bounds.width} * scaleFactor;
+              canvas.height = ${bounds.height} * scaleFactor;
+
+              console.log('[Recording HTML] Canvas dimensions:', canvas.width, 'x', canvas.height);
+
+              const ctx = canvas.getContext('2d');
+
+              // Calculate source rectangle (accounting for scale factor)
+              const sourceX = ${bounds.x} * scaleFactor;
+              const sourceY = ${bounds.y} * scaleFactor;
+              const sourceWidth = ${bounds.width} * scaleFactor;
+              const sourceHeight = ${bounds.height} * scaleFactor;
+
+              console.log('[Recording HTML] Source rect:', sourceX, sourceY, sourceWidth, sourceHeight);
+
+              // Draw cropped video to canvas in a loop
+              function drawFrame() {
+                ctx.drawImage(
+                  video,
+                  sourceX, sourceY, sourceWidth, sourceHeight,  // source rectangle
+                  0, 0, canvas.width, canvas.height              // destination rectangle
+                );
+                animationFrameId = requestAnimationFrame(drawFrame);
+              }
+              drawFrame();
+
+              // Get stream from canvas
+              stream = canvas.captureStream(30); // 30 FPS
+              console.log('[Recording HTML] Cropped stream created from canvas');
+
+              // Create MediaRecorder from the cropped canvas stream
               const options = {
                 mimeType: 'video/webm;codecs=vp9',
                 videoBitsPerSecond: 2500000
@@ -617,12 +674,14 @@ export class CaptureService {
               };
 
               mediaRecorder.start(1000); // Capture in 1-second chunks
-              console.log('[Recording HTML] MediaRecorder started');
+              console.log('[Recording HTML] MediaRecorder started with cropped stream');
 
               // Store globally so stopRecording can access
               window.mediaRecorder = mediaRecorder;
               window.recordedChunks = recordedChunks;
               window.stream = stream;
+              window.screenStream = screenStream;
+              window.animationFrameId = animationFrameId;
 
             } catch (error) {
               console.error('[Recording HTML] Error starting recording:', error);
@@ -639,9 +698,17 @@ export class CaptureService {
               window.mediaRecorder.onstop = () => {
                 console.log('[Recording HTML] Recording stopped, chunks:', window.recordedChunks.length);
 
+                // Stop animation frame
+                if (window.animationFrameId) {
+                  cancelAnimationFrame(window.animationFrameId);
+                }
+
                 // Stop all tracks
                 if (window.stream) {
                   window.stream.getTracks().forEach(track => track.stop());
+                }
+                if (window.screenStream) {
+                  window.screenStream.getTracks().forEach(track => track.stop());
                 }
 
                 const blob = new Blob(window.recordedChunks, { type: 'video/webm' });

@@ -74,19 +74,19 @@ export default function RecordingAreaSelector() {
 
       console.log("[Recording Area Selector] Confirming selection:", selection);
 
-      // Scale bounds for high DPI displays
-      const scaleFactor = window.devicePixelRatio;
-      const scaledBounds = {
-        x: Math.round(selection.x * scaleFactor),
-        y: Math.round(selection.y * scaleFactor),
-        width: Math.round(selection.width * scaleFactor),
-        height: Math.round(selection.height * scaleFactor),
+      // Don't scale bounds - getUserMedia expects logical pixels, not physical pixels
+      // The recording service will handle any necessary scaling internally
+      const bounds = {
+        x: Math.round(selection.x),
+        y: Math.round(selection.y),
+        width: Math.round(selection.width),
+        height: Math.round(selection.height),
       };
 
-      console.log("[Recording Area Selector] Scaled bounds:", scaledBounds);
+      console.log("[Recording Area Selector] Sending bounds:", bounds);
 
       try {
-        await window.api.recordingAreaSelected(scaledBounds);
+        await window.api.recordingAreaSelected(bounds);
         console.log(
           "[Recording Area Selector] Area selection sent successfully"
         );

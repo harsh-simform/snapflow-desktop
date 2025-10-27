@@ -21,6 +21,7 @@ export interface Issue {
     platform: string;
     externalId: string;
     url?: string;
+    connectorId?: string;
   }[];
   userId: string;
   tags?: string[];

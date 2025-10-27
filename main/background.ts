@@ -1996,6 +1996,7 @@ function setupIPCHandlers() {
         platform: "github",
         externalId: result.issueNumber.toString(),
         url: result.url,
+        connectorId: connectorId,
       });
 
       return {

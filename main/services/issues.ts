@@ -18,6 +18,7 @@ interface Issue {
     platform: string;
     externalId: string;
     url?: string;
+    connectorId?: string;
   }[];
   userId: string;
   tags?: string[];
@@ -144,7 +145,12 @@ export class IssueService {
   async updateSyncStatus(
     issueId: string,
     status: "local" | "synced" | "syncing" | "failed",
-    syncInfo?: { platform: string; externalId: string; url?: string }
+    syncInfo?: {
+      platform: string;
+      externalId: string;
+      url?: string;
+      connectorId?: string;
+    }
   ): Promise<Issue> {
     const issues = store.get("issues");
     const index = issues.findIndex((issue) => issue.id === issueId);

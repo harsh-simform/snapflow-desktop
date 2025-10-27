@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
+import { WindowControls } from "../components/ui/WindowControls";
 
 export default function AnnotateRecording() {
   const router = useRouter();
@@ -148,66 +149,88 @@ export default function AnnotateRecording() {
         <title>Save Recording - SnapFlow</title>
       </Head>
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
-        {/* Header */}
-        <div className="bg-gray-900/50 backdrop-blur-sm border-b border-gray-700">
-          <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <svg
-                className="w-6 h-6 text-red-500"
-                fill="currentColor"
-                viewBox="0 0 20 20"
-              >
-                <circle cx="10" cy="10" r="6" />
-              </svg>
-              <h1 className="text-xl font-bold text-gray-100">
-                Save Recording
-              </h1>
-              {duration > 0 && (
-                <span className="text-sm text-gray-400">
-                  {formatDuration(duration)}
-                </span>
-              )}
+        {/* Titlebar with Window Controls - Draggable */}
+        <div
+          className="glass-strong border-b border-white/5 sticky top-0 z-20 backdrop-blur-xl"
+          style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+        >
+          <div className="flex items-center justify-end h-9 pl-4">
+            <div style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+              <WindowControls />
             </div>
-            <div className="flex items-center space-x-3">
-              <button
-                onClick={handleCancel}
-                disabled={isSaving}
-                className="px-4 py-2 text-gray-300 hover:text-white transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={isSaving || !title.trim()}
-                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold px-6 py-2 rounded-lg transition-colors flex items-center space-x-2"
-              >
-                {isSaving ? (
-                  <>
-                    <svg
-                      className="animate-spin h-4 w-4"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      />
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      />
-                    </svg>
-                    <span>Saving...</span>
-                  </>
-                ) : (
-                  <span>Save Recording</span>
-                )}
-              </button>
+          </div>
+        </div>
+
+        {/* Header */}
+        <div className="glass-strong border-b border-white/10 backdrop-blur-xl">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                {/* Recording Icon Badge */}
+                <div className="w-10 h-10 bg-red-600/20 border border-red-500/30 rounded-xl flex items-center justify-center">
+                  <svg
+                    className="w-5 h-5 text-red-500"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <circle cx="10" cy="10" r="6" />
+                  </svg>
+                </div>
+                {/* Title and Duration */}
+                <div className="flex items-center space-x-3">
+                  <h1 className="text-xl font-bold text-gray-100">
+                    Save Recording
+                  </h1>
+                  {duration > 0 && (
+                    <span className="px-2.5 py-1 bg-gray-800/50 border border-gray-700/50 rounded-lg text-xs font-mono text-gray-300">
+                      {formatDuration(duration)}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={handleCancel}
+                  disabled={isSaving}
+                  className="h-10 px-4 text-sm inline-flex items-center justify-center rounded-lg font-medium transition-all duration-200 bg-transparent text-gray-300 hover:bg-gray-800/50 hover:text-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={isSaving || !title.trim()}
+                  className="h-10 px-6 text-sm inline-flex items-center justify-center rounded-lg font-semibold transition-all duration-200 bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed space-x-2"
+                >
+                  {isSaving ? (
+                    <>
+                      <svg
+                        className="animate-spin h-4 w-4"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        />
+                      </svg>
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <span>Save Recording</span>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>
