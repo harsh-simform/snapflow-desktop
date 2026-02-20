@@ -164,6 +164,22 @@ async function createMainWindow() {
     true // Enable preventClose for tray-based application
   );
 
+  // Set Content Security Policy to fix Electron security warning
+  mainWindow.webContents.session.webRequest.onHeadersReceived(
+    (details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          "Content-Security-Policy": [
+            isProd
+              ? "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'"
+              : "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: http://localhost:*",
+          ],
+        },
+      });
+    }
+  );
+
   // Check if user is already logged in (session exists)
   const currentUser = sessionManager.getUser();
   let hasUser = false;
@@ -991,10 +1007,12 @@ async function handleStopRecording() {
     const result = await captureService.stopRecording();
     log.info("[Recording] Recording stopped:", result);
 
-    // Store recording data
+    // Store recording data including thumbnail path
     pendingRecording = {
       dataUrl: result.filePath, // Path to video file
       duration: result.duration,
+      thumbnailPath: result.thumbnailPath, // Path to thumbnail
+      issueId: result.issueId, // Issue ID for file organization
     };
 
     // Show main window and navigate to recording annotate page
@@ -1607,6 +1625,9 @@ function setupIPCHandlers() {
         if (windowCaptureOverlay) {
           windowCaptureOverlay.close();
           windowCaptureOverlay = null;
+          // Wait for the OS compositor to fully remove the overlay from screen
+          // before capturing, so it doesn't appear in the screenshot
+          await new Promise((resolve) => setTimeout(resolve, 150));
         }
 
         const result = await captureService.captureScreenshot({
@@ -1627,6 +1648,14 @@ function setupIPCHandlers() {
           const port = process.argv[2];
           await mainWindow?.loadURL(`http://localhost:${port}/annotate`);
         }
+
+        // After page has loaded, also send the screenshot via IPC event as a
+        // reliable backup in case the renderer's getPendingScreenshot fires
+        // before pendingScreenshot was set (race condition safeguard)
+        mainWindow?.webContents.send("screenshot-captured", {
+          dataUrl: result.dataUrl,
+          mode,
+        });
 
         return { success: true, data: result };
       } catch (error) {
@@ -2093,10 +2122,21 @@ function setupIPCHandlers() {
   // File access handler
   ipcMain.handle("file:read-image", async (_event, { filePath }) => {
     try {
-      if (!fs.existsSync(filePath)) {
-        return { success: false, error: "File not found" };
+      log.info("[File] Reading image:", filePath);
+
+      // Validate file path
+      if (!filePath || typeof filePath !== "string") {
+        log.error("[File] Invalid file path provided:", filePath);
+        return { success: false, error: `Invalid file path: ${filePath}` };
       }
 
+      // Check if file exists
+      if (!fs.existsSync(filePath)) {
+        log.warn("[File] File not found:", filePath);
+        return { success: false, error: `File not found: ${filePath}` };
+      }
+
+      // Read and convert file
       const buffer = fs.readFileSync(filePath);
       const base64 = buffer.toString("base64");
       const ext = path.extname(filePath).toLowerCase();
@@ -2105,16 +2145,23 @@ function setupIPCHandlers() {
           ? "image/png"
           : ext === ".jpg" || ext === ".jpeg"
             ? "image/jpeg"
-            : "image/png";
+            : ext === ".webm"
+              ? "video/webm"
+              : ext === ".mp4"
+                ? "video/mp4"
+                : "image/png";
       const dataUrl = `data:${mimeType};base64,${base64}`;
 
+      log.info("[File] Successfully read image, size:", buffer.length, "bytes");
       return { success: true, data: dataUrl };
     } catch (error) {
-      log.error("Error reading image:", error);
+      log.error("[File] Error reading image:", filePath, error);
       const errorMessage =
         error instanceof Error ? error.message : "An unexpected error occurred";
-      log.error("IPC Handler error:", error);
-      return { success: false, error: errorMessage };
+      return {
+        success: false,
+        error: `Failed to read file ${filePath}: ${errorMessage}`,
+      };
     }
   });
 

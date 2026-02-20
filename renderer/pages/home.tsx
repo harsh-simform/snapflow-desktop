@@ -1021,12 +1021,6 @@ export default function HomePage() {
                               src={issue.thumbnailPath}
                               alt={issue.title}
                               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                              onError={() => {
-                                console.error(
-                                  "Failed to load thumbnail:",
-                                  issue.thumbnailPath
-                                );
-                              }}
                             />
                             {/* Preview overlay */}
                             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all duration-300 flex items-center justify-center">
@@ -1258,6 +1252,12 @@ export default function HomePage() {
           >
             <DialogVisuallyHidden>
               <DialogTitle>{previewIssue?.title || "Snap Preview"}</DialogTitle>
+              <DialogDescription>
+                {previewIssue?.type === "screenshot"
+                  ? "Screenshot"
+                  : "Recording"}{" "}
+                preview and details
+              </DialogDescription>
             </DialogVisuallyHidden>
             {previewIssue && (
               <div className="flex flex-col md:flex-row w-full h-full">
@@ -1271,12 +1271,6 @@ export default function HomePage() {
                       style={{
                         imageRendering: "crisp-edges" as any,
                         objectFit: "contain",
-                      }}
-                      onError={() => {
-                        console.error(
-                          "Failed to load full-resolution image:",
-                          previewIssue.filePath
-                        );
                       }}
                     />
                   ) : (
