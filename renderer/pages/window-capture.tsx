@@ -24,7 +24,7 @@ export default function WindowCapture() {
 
     // Listen for background screenshot
     const unsubscribeScreenshot = window.api.onBackgroundScreenshot(
-      (data: any) => {
+      (data: { dataUrl: string }) => {
         console.log("Received background screenshot for window selection");
         setBackgroundImage(data.dataUrl);
         setIsLoading(false);
@@ -61,7 +61,7 @@ export default function WindowCapture() {
       <Head>
         <title>Select Window - SnapFlow</title>
       </Head>
-      <style jsx global={true}>{`
+      <style jsx global>{`
         html,
         body {
           background-color: transparent !important;

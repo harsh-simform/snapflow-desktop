@@ -111,9 +111,12 @@ class SessionManager {
           await storageManager.ensureDirectories();
 
           // Store user data for quick access
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (sessionStore as any).set("user", user);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (sessionStore as any).set("userId", user.id);
           // Also store session tokens for backup
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (sessionStore as any).set("supabaseSession", {
             accessToken: session.access_token,
             refreshToken: session.refresh_token,
@@ -138,8 +141,11 @@ class SessionManager {
     } else {
       log.info("[Session] No session found");
       // Clear any stale data
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (sessionStore as any).set("user", null);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (sessionStore as any).set("userId", null);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (sessionStore as any).set("supabaseSession", null);
     }
 
@@ -169,6 +175,7 @@ class SessionManager {
 
       if (event === "TOKEN_REFRESHED" && session) {
         log.info("[Session] Token refreshed, updating stored session");
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (sessionStore as any).set("supabaseSession", {
           accessToken: session.access_token,
           refreshToken: session.refresh_token,
@@ -180,6 +187,7 @@ class SessionManager {
       } else if (event === "SIGNED_IN" && session) {
         log.info("[Session] User signed in via auth state change");
         // Update session tokens
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (sessionStore as any).set("supabaseSession", {
           accessToken: session.access_token,
           refreshToken: session.refresh_token,
@@ -213,8 +221,11 @@ class SessionManager {
     if (session) {
       log.info("[Session] Storing user and Supabase tokens");
       // Store both user data and Supabase tokens
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (sessionStore as any).set("user", user);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (sessionStore as any).set("userId", user.id);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (sessionStore as any).set("supabaseSession", {
         accessToken: session.access_token,
         refreshToken: session.refresh_token,
@@ -231,7 +242,9 @@ class SessionManager {
     } else {
       log.warn("[Session] No Supabase session found - storing user only");
       // Just store user if no session (shouldn't happen normally)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (sessionStore as any).set("user", user);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (sessionStore as any).set("userId", user.id);
     }
   }
@@ -260,8 +273,11 @@ class SessionManager {
       storageManager.clearCurrentUser();
 
       // Clear from persistent storage
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (sessionStore as any).set("user", null);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (sessionStore as any).set("userId", null);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (sessionStore as any).set("supabaseSession", null);
 
       // Sign out from Supabase
@@ -291,6 +307,7 @@ class SessionManager {
    * and our auth state change listener. This method is kept for manual refresh if needed.
    */
   async refreshSession(): Promise<void> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const storedSession = (sessionStore as any).get("supabaseSession");
 
     if (storedSession) {
@@ -303,6 +320,7 @@ class SessionManager {
 
         if (session) {
           // Update stored tokens
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (sessionStore as any).set("supabaseSession", {
             accessToken: session.access_token,
             refreshToken: session.refresh_token,
@@ -321,6 +339,7 @@ class SessionManager {
    * Check if the current session is valid and not expired
    */
   isSessionValid(): boolean {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const storedSession = (sessionStore as any).get("supabaseSession");
     if (!storedSession || !this.currentUser) {
       return false;

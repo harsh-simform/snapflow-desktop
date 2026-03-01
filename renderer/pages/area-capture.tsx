@@ -34,11 +34,18 @@ export default function AreaCapture() {
 
   useEffect(() => {
     // Listen for area capture ready event
-    const unsubscribe = window.ipc.on("area-capture-ready", (data: any) => {
-      setScaleFactor(data.scaleFactor || 1);
-      setDisplayBounds(data.displayBounds || null);
-      setOverlayBounds(data.overlayBounds || null);
-    });
+    const unsubscribe = window.ipc.on(
+      "area-capture-ready",
+      (data: {
+        scaleFactor?: number;
+        displayBounds?: { x: number; y: number; width: number; height: number };
+        overlayBounds?: { x: number; y: number; width: number; height: number };
+      }) => {
+        setScaleFactor(data.scaleFactor || 1);
+        setDisplayBounds(data.displayBounds || null);
+        setOverlayBounds(data.overlayBounds || null);
+      }
+    );
 
     // Handle escape key to cancel
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -152,7 +159,7 @@ export default function AreaCapture() {
       <Head>
         <title>Select Area - SnapFlow</title>
       </Head>
-      <style jsx global={true}>{`
+      <style jsx global>{`
         html,
         body {
           background-color: transparent !important;
