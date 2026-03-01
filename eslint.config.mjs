@@ -44,6 +44,11 @@ export default [
         Blob: "readonly",
         File: "readonly",
         FileReader: "readonly",
+        URL: "readonly",
+        URLSearchParams: "readonly",
+        RequestInfo: "readonly",
+        RequestInit: "readonly",
+        AbortController: "readonly",
         // DOM Types
         HTMLElement: "readonly",
         HTMLButtonElement: "readonly",
@@ -75,6 +80,8 @@ export default [
         require: "readonly",
         Buffer: "readonly",
         global: "readonly",
+        // TypeScript globals
+        NodeJS: "readonly",
         // Timers
         setTimeout: "readonly",
         setInterval: "readonly",
@@ -103,7 +110,9 @@ export default [
         },
       ],
       "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/use-unknown-in-catch-callback": "off",
       "no-console": "off",
+      "no-throw-literal": "off",
     },
   },
   // Prettier config (must be last to override other configs)

@@ -68,6 +68,15 @@ export default function HomePage() {
         setUser(userResult.data);
         console.log("User loaded:", userResult.data.email);
 
+        // Check onboarding status
+        console.log("Checking onboarding status...");
+        const onboardingResult = await window.api.getOnboardingStatus();
+        if (!onboardingResult.success || !onboardingResult.data?.isComplete) {
+          console.log("Onboarding incomplete, redirecting...");
+          router.push("/onboarding");
+          return;
+        }
+
         const issuesResult = await window.api.listIssues(userResult.data.id);
         if (issuesResult.success) {
           setIssues(issuesResult.data || []);

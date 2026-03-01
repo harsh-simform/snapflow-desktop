@@ -29,6 +29,29 @@ const api = {
   updateUser: (userId: string, updates: { name?: string; email?: string }) =>
     ipcRenderer.invoke("user:update", { userId, updates }),
   logout: () => ipcRenderer.invoke("user:logout"),
+  googleSignIn: () => ipcRenderer.invoke("user:google-signin"),
+
+  // Tenant methods
+  createTenant: (name: string, description?: string) =>
+    ipcRenderer.invoke("tenant:create", { name, description }),
+  getUserTenant: () => ipcRenderer.invoke("tenant:get"),
+
+  // Workspace methods
+  createWorkspace: (tenantId: string, name: string, description?: string) =>
+    ipcRenderer.invoke("workspace:create", { tenantId, name, description }),
+  listWorkspaces: (tenantId: string) =>
+    ipcRenderer.invoke("workspace:list", { tenantId }),
+  inviteTeamMember: (
+    workspaceId: string,
+    email: string,
+    role: "admin" | "pm" | "qa" | "dev" | "client"
+  ) =>
+    ipcRenderer.invoke("workspace-member:invite", { workspaceId, email, role }),
+  listWorkspaceMembers: (workspaceId: string) =>
+    ipcRenderer.invoke("workspace-member:list", { workspaceId }),
+
+  // Onboarding
+  getOnboardingStatus: () => ipcRenderer.invoke("onboarding:get-status"),
 
   // Issue methods
   createIssue: (
@@ -100,13 +123,16 @@ const api = {
   getPendingRecording: () => ipcRenderer.invoke("recording:get-pending"),
 
   // Connector methods
-  listConnectors: () => ipcRenderer.invoke("connector:list"),
-  addConnector: (connector: Record<string, unknown>) =>
-    ipcRenderer.invoke("connector:add", connector),
+  listConnectors: (workspaceId: string) =>
+    ipcRenderer.invoke("connector:list", { workspaceId }),
+  addConnector: (workspaceId: string, connector: Record<string, unknown>) =>
+    ipcRenderer.invoke("connector:add", { workspaceId, ...connector }),
   updateConnector: (id: string, updates: Record<string, unknown>) =>
     ipcRenderer.invoke("connector:update", { id, updates }),
   deleteConnector: (id: string) =>
     ipcRenderer.invoke("connector:delete", { id }),
+  validateZohoConnector: (accessToken: string, portalId: string) =>
+    ipcRenderer.invoke("connector:validate-zoho", { accessToken, portalId }),
 
   // Sync methods - GitHub
   syncIssue: (issueId: string, connectorId: string) =>

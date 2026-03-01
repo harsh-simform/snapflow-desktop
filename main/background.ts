@@ -10,6 +10,8 @@ import { captureService } from "./services/capture";
 import { connectorService } from "./services/connectors";
 import { updaterService } from "./services/updater";
 import { syncService } from "./services/sync";
+import { tenantService } from "./services/tenant";
+import { workspaceService } from "./services/workspace";
 import { storageManager } from "./utils/storage";
 import { sessionManager } from "./utils/session";
 import { TrayIconManager } from "./utils/tray-icon-manager";
@@ -346,31 +348,32 @@ function updateTrayMenu() {
     });
   }
 
-  // Recording menu item - changes based on recording state
-  let recordingMenuItem: electron.MenuItemConstructorOptions;
-
-  if (recordingState === "recording") {
-    recordingMenuItem = {
-      label: "■ Stop Recording",
-      click: async () => {
-        await handleStopRecording();
-      },
-    };
-  } else {
-    // idle or selecting state
-    recordingMenuItem = {
-      label: "Record Screen",
-      click: async () => {
-        await handleStartRecordingFlow();
-      },
-    };
-  }
+  // Recording menu item - disabled for now, code preserved for future re-enablement
+  // let recordingMenuItem: electron.MenuItemConstructorOptions;
+  //
+  // if (recordingState === "recording") {
+  //   recordingMenuItem = {
+  //     label: "■ Stop Recording",
+  //     click: async () => {
+  //       await handleStopRecording();
+  //     },
+  //   };
+  // } else {
+  //   // idle or selecting state
+  //   recordingMenuItem = {
+  //     label: "Record Screen",
+  //     click: async () => {
+  //       await handleStartRecordingFlow();
+  //     },
+  //   };
+  // }
 
   const contextMenu = Menu.buildFromTemplate([
     ...captureMenuItems,
     { type: "separator" },
-    recordingMenuItem,
-    { type: "separator" },
+    // Recording feature disabled for now - code preserved for future re-enablement
+    // recordingMenuItem,
+    // { type: "separator" },
     {
       label: "View My Snaps",
       click: async () => {
@@ -1218,14 +1221,85 @@ async function handleCheckForUpdates() {
 if (app && app.requestSingleInstanceLock) {
   const gotTheLock = app.requestSingleInstanceLock();
 
+  /**
+   * Handle OAuth callback deep link (snapflow://auth/callback)
+   */
+  async function handleOAuthCallback(url: string) {
+    log.info("[OAuth] Handling callback URL:", url);
+
+    try {
+      // Parse hash fragment to extract tokens
+      // URL format: snapflow://auth/callback#access_token=...&refresh_token=...&expires_in=...
+      const hashIndex = url.indexOf("#");
+      if (hashIndex === -1) {
+        log.warn("[OAuth] No hash fragment found in callback URL");
+        return;
+      }
+
+      const hashFragment = url.substring(hashIndex + 1);
+      const params = new URLSearchParams(hashFragment);
+      const accessToken = params.get("access_token");
+      const refreshToken = params.get("refresh_token");
+
+      if (!accessToken || !refreshToken) {
+        log.warn("[OAuth] Missing tokens in callback URL");
+        return;
+      }
+
+      log.info("[OAuth] Extracted tokens from callback");
+
+      // Set session in Supabase
+      const session = await authService.setSession(accessToken, refreshToken);
+      log.info("[OAuth] Session set successfully");
+
+      // Get current user
+      const user = await authService.getCurrentUser();
+      if (!user) {
+        log.error("[OAuth] Failed to get current user after OAuth");
+        return;
+      }
+
+      log.info("[OAuth] User authenticated:", user.email);
+
+      // Set user in session manager
+      await sessionManager.setUser(user);
+
+      // Navigate to onboarding check
+      if (mainWindow?.webContents) {
+        mainWindow.webContents.send("navigate", "/onboarding");
+      }
+
+      log.info("[OAuth] ✓ OAuth callback handled successfully");
+    } catch (error) {
+      log.error("[OAuth] Error handling OAuth callback:", error);
+    }
+  }
+
   if (!gotTheLock) {
     // Another instance is already running, quit this one
     app.quit();
   } else {
-    // Handle second instance attempt - focus the existing window
-    app.on("second-instance", async () => {
-      // Someone tried to run a second instance, we should focus our window
-      await showMainWindow();
+    // Handle macOS deep link (open-url event)
+    app.on("open-url", (event, url) => {
+      event.preventDefault();
+      log.info("[Deep Link] Received deep link:", url);
+      if (url.startsWith("snapflow://auth/callback")) {
+        handleOAuthCallback(url);
+      }
+    });
+
+    // Handle Windows/Linux second instance with command line args
+    app.on("second-instance", async (_event, commandLine) => {
+      // Check if one of the command line arguments is the OAuth callback
+      const callbackUrl = commandLine.find(arg => arg.startsWith("snapflow://auth/callback"));
+      if (callbackUrl) {
+        log.info("[Deep Link] Second instance OAuth callback detected");
+        handleOAuthCallback(callbackUrl);
+      } else {
+        // Regular second instance - just focus the window
+        log.info("[Deep Link] Second instance focus");
+        await showMainWindow();
+      }
     });
 
     (async () => {
@@ -1497,6 +1571,171 @@ function setupIPCHandlers() {
       const errorMessage =
         error instanceof Error ? error.message : "An unexpected error occurred";
       log.error("Logout error:", error);
+      return { success: false, error: errorMessage };
+    }
+  });
+
+  ipcMain.handle("user:google-signin", async () => {
+    try {
+      const oauthUrl = await authService.googleSignIn();
+      // Open the URL in the default browser
+      shell.openExternal(oauthUrl);
+      return { success: true, data: { url: oauthUrl } };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      log.error("Google signin error:", error);
+      return { success: false, error: errorMessage };
+    }
+  });
+
+  // Tenant handlers
+  ipcMain.handle("tenant:create", async (_event, { name, description }) => {
+    try {
+      const userId = sessionManager.getUserId();
+      if (!userId) {
+        throw new Error("User not authenticated");
+      }
+      const tenant = await tenantService.createTenant(userId, name, description);
+      return { success: true, data: tenant };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      log.error("Create tenant error:", error);
+      return { success: false, error: errorMessage };
+    }
+  });
+
+  ipcMain.handle("tenant:get", async () => {
+    try {
+      const userId = sessionManager.getUserId();
+      if (!userId) {
+        throw new Error("User not authenticated");
+      }
+      const tenant = await tenantService.getTenantByOwner(userId);
+      return { success: true, data: tenant };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      log.error("Get tenant error:", error);
+      return { success: false, error: errorMessage };
+    }
+  });
+
+  // Workspace handlers
+  ipcMain.handle("workspace:create", async (_event, { tenantId, name, description }) => {
+    try {
+      const userId = sessionManager.getUserId();
+      if (!userId) {
+        throw new Error("User not authenticated");
+      }
+      const workspace = await workspaceService.createWorkspace(
+        userId,
+        tenantId,
+        name,
+        description
+      );
+      return { success: true, data: workspace };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      log.error("Create workspace error:", error);
+      return { success: false, error: errorMessage };
+    }
+  });
+
+  ipcMain.handle("workspace:list", async (_event, { tenantId }) => {
+    try {
+      const workspaces = await workspaceService.listWorkspaces(tenantId);
+      return { success: true, data: workspaces };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      log.error("List workspaces error:", error);
+      return { success: false, error: errorMessage };
+    }
+  });
+
+  // Workspace member handlers
+  ipcMain.handle(
+    "workspace-member:invite",
+    async (_event, { workspaceId, email, role }) => {
+      try {
+        await workspaceService.inviteByEmail(workspaceId, email, role);
+        return { success: true };
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : "An unexpected error occurred";
+        log.error("Invite team member error:", error);
+        return { success: false, error: errorMessage };
+      }
+    }
+  );
+
+  ipcMain.handle("workspace-member:list", async (_event, { workspaceId }) => {
+    try {
+      const members = await workspaceService.listMembers(workspaceId);
+      return { success: true, data: members };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      log.error("List workspace members error:", error);
+      return { success: false, error: errorMessage };
+    }
+  });
+
+  // Onboarding status handler
+  ipcMain.handle("onboarding:get-status", async () => {
+    try {
+      const userId = sessionManager.getUserId();
+      if (!userId) {
+        return {
+          success: true,
+          data: {
+            hasTenant: false,
+            hasWorkspace: false,
+            hasConnector: false,
+            isComplete: false,
+            currentStep: 1,
+          },
+        };
+      }
+
+      const tenant = await tenantService.getTenantByOwner(userId);
+      const workspaces = tenant ? await workspaceService.listWorkspaces(tenant.id) : [];
+      const workspace = workspaces[0] ?? null;
+      const connectors = workspace ? await connectorService.getConnectors(workspace.id) : [];
+
+      const hasTenant = !!tenant;
+      const hasWorkspace = !!workspace;
+      const hasConnector = connectors.length > 0;
+      const isComplete = hasTenant && hasWorkspace && hasConnector;
+
+      let currentStep = 1;
+      if (hasTenant && !hasWorkspace) {
+        currentStep = 3; // Skip step 2 (invites) for now, go to workspace
+      } else if (hasTenant && hasWorkspace && !hasConnector) {
+        currentStep = 4; // Add connectors
+      } else if (isComplete) {
+        currentStep = 5; // Done
+      }
+
+      return {
+        success: true,
+        data: {
+          hasTenant,
+          hasWorkspace,
+          hasConnector,
+          isComplete,
+          currentStep,
+          tenant: tenant ?? undefined,
+          workspace: workspace ?? undefined,
+        },
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      log.error("Get onboarding status error:", error);
       return { success: false, error: errorMessage };
     }
   });
@@ -1917,13 +2156,13 @@ function setupIPCHandlers() {
   });
 
   // Connector handlers
-  ipcMain.handle("connector:list", async () => {
+  ipcMain.handle("connector:list", async (_event, { workspaceId }) => {
     try {
       const user = sessionManager.getUser();
       if (!user) {
         throw new Error("User not authenticated");
       }
-      const connectors = await connectorService.getConnectors(user.id);
+      const connectors = await connectorService.getConnectors(workspaceId);
       return { success: true, data: connectors };
     } catch (error) {
       const errorMessage =
@@ -1933,7 +2172,7 @@ function setupIPCHandlers() {
     }
   });
 
-  ipcMain.handle("connector:add", async (_event, connector) => {
+  ipcMain.handle("connector:add", async (_event, { workspaceId, ...connector }) => {
     try {
       const user = sessionManager.getUser();
       if (!user) {
@@ -1941,6 +2180,7 @@ function setupIPCHandlers() {
       }
       const newConnector = await connectorService.addConnector(
         user.id,
+        workspaceId,
         connector
       );
       return { success: true, data: newConnector };
@@ -1954,15 +2194,7 @@ function setupIPCHandlers() {
 
   ipcMain.handle("connector:update", async (_event, { id, updates }) => {
     try {
-      const user = sessionManager.getUser();
-      if (!user) {
-        throw new Error("User not authenticated");
-      }
-      const connector = await connectorService.updateConnector(
-        user.id,
-        id,
-        updates
-      );
+      const connector = await connectorService.updateConnector(id, updates);
       return { success: true, data: connector };
     } catch (error) {
       const errorMessage =
@@ -1974,11 +2206,7 @@ function setupIPCHandlers() {
 
   ipcMain.handle("connector:delete", async (_event, { id }) => {
     try {
-      const user = sessionManager.getUser();
-      if (!user) {
-        throw new Error("User not authenticated");
-      }
-      await connectorService.deleteConnector(user.id, id);
+      await connectorService.deleteConnector(id);
       return { success: true };
     } catch (error) {
       const errorMessage =
@@ -2001,10 +2229,7 @@ function setupIPCHandlers() {
         throw new Error("Issue not found");
       }
 
-      const connector = await connectorService.getConnectorById(
-        user.id,
-        connectorId
-      );
+      const connector = await connectorService.getConnectorById(connectorId);
       if (!connector || !connector.enabled) {
         throw new Error("GitHub connector not found or disabled");
       }
@@ -2104,6 +2329,27 @@ function setupIPCHandlers() {
           accessToken,
           owner,
           repo
+        );
+        return { success: true, data: { isValid } };
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : "An unexpected error occurred";
+        log.error("IPC Handler error:", error);
+        return { success: false, error: errorMessage };
+      }
+    }
+  );
+
+  // Validate Zoho connector
+  ipcMain.handle(
+    "connector:validate-zoho",
+    async (_event, { accessToken, portalId }) => {
+      try {
+        const isValid = await connectorService.validateZohoConnector(
+          accessToken,
+          portalId
         );
         return { success: true, data: { isValid } };
       } catch (error) {

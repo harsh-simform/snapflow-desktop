@@ -18,6 +18,18 @@ const supabaseStore = new Store<Record<string, string>>({
   defaults: {},
 });
 
+// Custom fetch with timeout to prevent hanging indefinitely
+function createFetchWithTimeout(timeoutMs = 15000) {
+  return (url: RequestInfo | URL, options?: RequestInit) => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    return fetch(url, { ...options, signal: controller.signal }).finally(() => {
+      clearTimeout(timeout);
+    });
+  };
+}
+
 // Lazy initialization function for Supabase client
 function initializeSupabase(): SupabaseClient | null {
   const supabaseUrl = getSupabaseUrl();
@@ -62,6 +74,10 @@ function initializeSupabase(): SupabaseClient | null {
           supabaseStore.delete(key);
         },
       },
+    },
+    global: {
+      // Use custom fetch with timeout to prevent hanging on slow networks
+      fetch: createFetchWithTimeout(15000),
     },
   });
 

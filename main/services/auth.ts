@@ -12,6 +12,23 @@ interface User {
 
 export class AuthService {
   /**
+   * Helper: Detect if error is a network error
+   */
+  private isNetworkError(error: unknown): boolean {
+    if (error instanceof Error) {
+      const msg = error.message.toLowerCase();
+      return (
+        msg.includes("fetch failed") ||
+        msg.includes("connect timeout") ||
+        msg.includes("network") ||
+        msg.includes("econnrefused") ||
+        msg.includes("enotfound")
+      );
+    }
+    return false;
+  }
+
+  /**
    * Create a new user account using Supabase Auth
    */
   async createUser(
@@ -32,35 +49,44 @@ export class AuthService {
     }
 
     log.info("[Auth Service] Calling supabase.auth.signUp...");
-    // Sign up user with Supabase Auth
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          name, // Store name in user metadata
+    try {
+      // Sign up user with Supabase Auth
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            name, // Store name in user metadata
+          },
         },
-      },
-    });
+      });
 
-    if (error) {
-      log.error("[Auth Service] ✗ SignUp error:", error.message);
-      if (error.message.includes("already registered")) {
-        throw new Error("User with this email already exists");
+      if (error) {
+        log.error("[Auth Service] ✗ SignUp error:", error.message);
+        if (error.message.includes("already registered")) {
+          throw new Error("User with this email already exists");
+        }
+        throw new Error(error.message);
       }
-      throw new Error(error.message);
-    }
 
-    if (!data.user) {
-      log.error("[Auth Service] ✗ No user data returned");
-      throw new Error("Failed to create user");
-    }
+      if (!data.user) {
+        log.error("[Auth Service] ✗ No user data returned");
+        throw new Error("Failed to create user");
+      }
 
-    const user = this.mapSupabaseUser(data.user);
-    log.info("[Auth Service] ✓ User created successfully");
-    log.info("[Auth Service] User ID:", user.id);
-    log.info("[Auth Service] === CREATE USER END ===");
-    return user;
+      const user = this.mapSupabaseUser(data.user);
+      log.info("[Auth Service] ✓ User created successfully");
+      log.info("[Auth Service] User ID:", user.id);
+      log.info("[Auth Service] === CREATE USER END ===");
+      return user;
+    } catch (networkError) {
+      // Handle network errors separately
+      if (this.isNetworkError(networkError)) {
+        log.error("[Auth Service] ✗ Network error:", networkError);
+        throw new Error("Unable to connect. Please check your internet connection.");
+      }
+      throw networkError;
+    }
   }
 
   /**
@@ -79,26 +105,40 @@ export class AuthService {
     }
 
     log.info("[Auth Service] Calling supabase.auth.signInWithPassword...");
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    if (error) {
-      log.error("[Auth Service] ✗ Login error:", error.message);
-      throw new Error("Invalid email or password");
+      if (error) {
+        log.error("[Auth Service] ✗ Login error:", error.message);
+        // Check for specific auth errors
+        const errorMsg = error.message.toLowerCase();
+        if (errorMsg.includes("invalid_credentials") || errorMsg.includes("invalid login")) {
+          throw new Error("Invalid email or password");
+        }
+        throw new Error(error.message);
+      }
+
+      if (!data.user) {
+        log.error("[Auth Service] ✗ No user data returned");
+        throw new Error("Failed to sign in");
+      }
+
+      const user = this.mapSupabaseUser(data.user);
+      log.info("[Auth Service] ✓ Login successful");
+      log.info("[Auth Service] User ID:", user.id);
+      log.info("[Auth Service] === LOGIN END ===");
+      return user;
+    } catch (networkError) {
+      // Handle network errors separately
+      if (this.isNetworkError(networkError)) {
+        log.error("[Auth Service] ✗ Network error:", networkError);
+        throw new Error("Unable to connect. Please check your internet connection.");
+      }
+      throw networkError;
     }
-
-    if (!data.user) {
-      log.error("[Auth Service] ✗ No user data returned");
-      throw new Error("Failed to sign in");
-    }
-
-    const user = this.mapSupabaseUser(data.user);
-    log.info("[Auth Service] ✓ Login successful");
-    log.info("[Auth Service] User ID:", user.id);
-    log.info("[Auth Service] === LOGIN END ===");
-    return user;
   }
 
   /**
@@ -367,6 +407,49 @@ export class AuthService {
     }
 
     return data.session;
+  }
+
+  /**
+   * Initiate Google OAuth sign-in
+   * Returns the OAuth URL to be opened in a browser
+   */
+  async googleSignIn(): Promise<string> {
+    log.info("[Auth Service] === GOOGLE SIGNIN START ===");
+
+    const supabase = getSupabase();
+    if (!supabase) {
+      log.error("[Auth Service] ✗ Supabase not configured");
+      throw new Error(
+        "Supabase is not configured. Please check your environment variables."
+      );
+    }
+
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: "snapflow://auth/callback",
+          skipBrowserRedirect: true,
+        },
+      });
+
+      if (error) {
+        log.error("[Auth Service] ✗ Google OAuth error:", error.message);
+        throw new Error(error.message);
+      }
+
+      if (!data?.url) {
+        log.error("[Auth Service] ✗ No OAuth URL returned");
+        throw new Error("Failed to generate Google OAuth URL");
+      }
+
+      log.info("[Auth Service] ✓ Google OAuth URL generated");
+      log.info("[Auth Service] === GOOGLE SIGNIN END ===");
+      return data.url;
+    } catch (error) {
+      log.error("[Auth Service] ✗ Google signin error:", error);
+      throw error;
+    }
   }
 
   /**

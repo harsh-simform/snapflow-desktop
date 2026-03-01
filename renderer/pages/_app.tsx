@@ -1,14 +1,73 @@
-import React from "react";
+import React, { useEffect } from "react";
 import type { AppProps } from "next/app";
+import { useRouter } from "next/router";
 import { Toaster } from "sonner";
 import { TooltipProvider } from "../components/ui/Tooltip";
 
 import "../styles/globals.css";
 
 function MyApp({ Component, pageProps }: AppProps) {
+  const router = useRouter();
+  const [authChecked, setAuthChecked] = React.useState(false);
+
+  useEffect(() => {
+    // Setup OAuth callback listener
+    const unsubscribe = window.api.onNavigate((route: string) => {
+      router.push(route);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [router]);
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      const publicRoutes = ["/auth"];
+
+      // Skip auth checks for public routes
+      if (publicRoutes.includes(router.pathname)) {
+        setAuthChecked(true);
+        return;
+      }
+
+      try {
+        // Check if user is authenticated
+        const userResult = await window.api.getUser();
+
+        if (!userResult.success || !userResult.data) {
+          // Not authenticated, redirect to auth
+          router.push("/auth");
+          return;
+        }
+
+        // User is authenticated, check onboarding status for non-auth routes
+        if (router.pathname !== "/onboarding") {
+          const onboardingResult = await window.api.getOnboardingStatus();
+
+          if (
+            onboardingResult.success &&
+            !onboardingResult.data?.isComplete
+          ) {
+            // Onboarding incomplete, redirect to onboarding
+            router.push("/onboarding");
+            return;
+          }
+        }
+
+        setAuthChecked(true);
+      } catch (err) {
+        console.error("Auth check error:", err);
+        setAuthChecked(true);
+      }
+    };
+
+    checkAuth();
+  }, [router.pathname, router]);
+
   return (
     <TooltipProvider delayDuration={300}>
-      <Component {...pageProps} />
+      {authChecked && <Component {...pageProps} />}
       <Toaster
         position="top-right"
         theme="dark"
