@@ -45,10 +45,7 @@ function MyApp({ Component, pageProps }: AppProps) {
         if (router.pathname !== "/onboarding") {
           const onboardingResult = await window.api.getOnboardingStatus();
 
-          if (
-            onboardingResult.success &&
-            !onboardingResult.data?.isComplete
-          ) {
+          if (onboardingResult.success && !onboardingResult.data?.isComplete) {
             // Onboarding incomplete, redirect to onboarding
             router.push("/onboarding");
             return;
