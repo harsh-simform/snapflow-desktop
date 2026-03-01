@@ -4,7 +4,11 @@ import path from "path";
 import { getSupabase } from "../utils/supabase";
 import log from "electron-log";
 import { customAlphabet } from "nanoid";
-import type { Connector } from "../../renderer/types";
+import type {
+  Connector,
+  GitHubConnectorConfig,
+  ZohoConnectorConfig,
+} from "../../renderer/types";
 
 const nanoid = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 8);
 
@@ -206,7 +210,7 @@ export class ConnectorService {
       "owner" in connector.config &&
       "repo" in connector.config
     ) {
-      const config = connector.config as {
+      const config = connector.config as unknown as {
         owner: string;
         repo: string;
         [key: string]: unknown;
@@ -725,7 +729,9 @@ export class ConnectorService {
       name: data.name as string,
       type: data.type as "github" | "zoho",
       enabled: data.enabled as boolean,
-      config: data.config as Record<string, unknown>,
+      config: data.config as unknown as
+        | GitHubConnectorConfig
+        | ZohoConnectorConfig,
       lastSyncAt: (data.last_sync_at as string) || undefined,
       createdAt: (data.created_at as string) || undefined,
       updatedAt: (data.updated_at as string) || undefined,

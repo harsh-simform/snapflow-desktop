@@ -35,6 +35,7 @@ export default function HomePage() {
   const { user, setUser, issues, setIssues, deleteIssue, updateIssue } =
     useStore();
   const [loading, setLoading] = useState(true);
+  const [workspaceId, setWorkspaceId] = useState<string>("");
   const [filter, setFilter] = useState<"all" | "screenshot" | "recording">(
     "all"
   );
@@ -75,6 +76,17 @@ export default function HomePage() {
           console.log("Onboarding incomplete, redirecting...");
           router.push("/onboarding");
           return;
+        }
+
+        // Get workspace ID
+        const tenantResult = await window.api.getUserTenant();
+        if (tenantResult.success && tenantResult.data?.id) {
+          const workspacesResult = await window.api.listWorkspaces(
+            tenantResult.data.id
+          );
+          if (workspacesResult.success && workspacesResult.data?.length > 0) {
+            setWorkspaceId(workspacesResult.data[0].id);
+          }
         }
 
         const issuesResult = await window.api.listIssues(userResult.data.id);
@@ -275,9 +287,11 @@ export default function HomePage() {
   // GitHub Sync Modal Dialog Component
   const GitHubSyncDropdown = ({
     issue,
+    workspaceId: dropdownWorkspaceId,
     className = "",
   }: {
     issue: Issue;
+    workspaceId: string;
     className?: string;
   }) => {
     const [connectors, setConnectors] = useState<any[]>([]);
@@ -290,7 +304,7 @@ export default function HomePage() {
 
     const loadConnectors = async () => {
       try {
-        const result = await window.api.listConnectors();
+        const result = await window.api.listConnectors(dropdownWorkspaceId);
         if (result.success) {
           const githubConnectors = (result.data || []).filter(
             (c: any) => c.type === "github" && c.enabled
@@ -1170,6 +1184,7 @@ export default function HomePage() {
                           <div className="flex items-center space-x-0.5">
                             <GitHubSyncDropdown
                               issue={issue}
+                              workspaceId={workspaceId}
                               className="hover:bg-gray-800"
                             />
                             <Button
@@ -1599,6 +1614,7 @@ export default function HomePage() {
                       <div className="flex-1">
                         <GitHubSyncDropdown
                           issue={previewIssue}
+                          workspaceId={workspaceId}
                           className="w-full justify-center text-xs h-9 bg-blue-600 hover:bg-blue-700 text-white"
                         />
                       </div>

@@ -152,7 +152,7 @@ export default function AreaCapture() {
       <Head>
         <title>Select Area - SnapFlow</title>
       </Head>
-      <style jsx global>{`
+      <style jsx global={true}>{`
         html,
         body {
           background-color: transparent !important;

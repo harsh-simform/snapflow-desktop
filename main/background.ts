@@ -104,7 +104,12 @@ let recordingBounds: {
   width: number;
   height: number;
 } | null = null;
-let pendingRecording: { dataUrl: string; duration: number } | null = null;
+let pendingRecording: {
+  dataUrl: string;
+  duration: number;
+  thumbnailPath?: string;
+  issueId?: string;
+} | null = null;
 
 if (isProd) {
   serve({ directory: "app" });
@@ -1217,63 +1222,63 @@ async function handleCheckForUpdates() {
   }
 }
 
+/**
+ * Handle OAuth callback deep link (snapflow://auth/callback)
+ */
+const handleOAuthCallback = async (url: string) => {
+  log.info("[OAuth] Handling callback URL:", url);
+
+  try {
+    // Parse hash fragment to extract tokens
+    // URL format: snapflow://auth/callback#access_token=...&refresh_token=...&expires_in=...
+    const hashIndex = url.indexOf("#");
+    if (hashIndex === -1) {
+      log.warn("[OAuth] No hash fragment found in callback URL");
+      return;
+    }
+
+    const hashFragment = url.substring(hashIndex + 1);
+    const params = new URLSearchParams(hashFragment);
+    const accessToken = params.get("access_token");
+    const refreshToken = params.get("refresh_token");
+
+    if (!accessToken || !refreshToken) {
+      log.warn("[OAuth] Missing tokens in callback URL");
+      return;
+    }
+
+    log.info("[OAuth] Extracted tokens from callback");
+
+    // Set session in Supabase
+    await authService.setSession(accessToken, refreshToken);
+    log.info("[OAuth] Session set successfully");
+
+    // Get current user
+    const user = await authService.getCurrentUser();
+    if (!user) {
+      log.error("[OAuth] Failed to get current user after OAuth");
+      return;
+    }
+
+    log.info("[OAuth] User authenticated:", user.email);
+
+    // Set user in session manager
+    await sessionManager.setUser(user);
+
+    // Navigate to onboarding check
+    if (mainWindow?.webContents) {
+      mainWindow.webContents.send("navigate", "/onboarding");
+    }
+
+    log.info("[OAuth] ✓ OAuth callback handled successfully");
+  } catch (error) {
+    log.error("[OAuth] Error handling OAuth callback:", error);
+  }
+};
+
 // Request single instance lock
 if (app && app.requestSingleInstanceLock) {
   const gotTheLock = app.requestSingleInstanceLock();
-
-  /**
-   * Handle OAuth callback deep link (snapflow://auth/callback)
-   */
-  async function handleOAuthCallback(url: string) {
-    log.info("[OAuth] Handling callback URL:", url);
-
-    try {
-      // Parse hash fragment to extract tokens
-      // URL format: snapflow://auth/callback#access_token=...&refresh_token=...&expires_in=...
-      const hashIndex = url.indexOf("#");
-      if (hashIndex === -1) {
-        log.warn("[OAuth] No hash fragment found in callback URL");
-        return;
-      }
-
-      const hashFragment = url.substring(hashIndex + 1);
-      const params = new URLSearchParams(hashFragment);
-      const accessToken = params.get("access_token");
-      const refreshToken = params.get("refresh_token");
-
-      if (!accessToken || !refreshToken) {
-        log.warn("[OAuth] Missing tokens in callback URL");
-        return;
-      }
-
-      log.info("[OAuth] Extracted tokens from callback");
-
-      // Set session in Supabase
-      const _session = await authService.setSession(accessToken, refreshToken);
-      log.info("[OAuth] Session set successfully");
-
-      // Get current user
-      const user = await authService.getCurrentUser();
-      if (!user) {
-        log.error("[OAuth] Failed to get current user after OAuth");
-        return;
-      }
-
-      log.info("[OAuth] User authenticated:", user.email);
-
-      // Set user in session manager
-      await sessionManager.setUser(user);
-
-      // Navigate to onboarding check
-      if (mainWindow?.webContents) {
-        mainWindow.webContents.send("navigate", "/onboarding");
-      }
-
-      log.info("[OAuth] ✓ OAuth callback handled successfully");
-    } catch (error) {
-      log.error("[OAuth] Error handling OAuth callback:", error);
-    }
-  }
 
   if (!gotTheLock) {
     // Another instance is already running, quit this one

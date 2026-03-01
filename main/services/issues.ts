@@ -62,9 +62,9 @@ export class IssueService {
 
     log.info("[Issue Service] Generated issue ID:", issue.id);
 
-    const issues = store.get("issues");
+    const issues = (store as any).get("issues");
     issues.push(issue);
-    store.set("issues", issues);
+    (store as any).set("issues", issues);
     log.info("[Issue Service] Saved to store, total issues:", issues.length);
 
     // Save metadata to file system
@@ -78,7 +78,7 @@ export class IssueService {
 
   getIssues(userId?: string): Issue[] {
     log.info("[Issue Service] Getting issues for user:", userId || "all");
-    const issues = store.get("issues");
+    const issues = (store as any).get("issues");
     if (userId) {
       const filtered = issues.filter((issue) => issue.userId === userId);
       log.info("[Issue Service] Found", filtered.length, "issues for user");
@@ -89,7 +89,7 @@ export class IssueService {
   }
 
   getIssueById(issueId: string): Issue | undefined {
-    const issues = store.get("issues");
+    const issues = (store as any).get("issues");
     return issues.find((issue) => issue.id === issueId);
   }
 
@@ -98,7 +98,7 @@ export class IssueService {
     log.info("[Issue Service] Issue ID:", issueId);
     log.info("[Issue Service] Updates:", JSON.stringify(updates));
 
-    const issues = store.get("issues");
+    const issues = (store as any).get("issues");
     const index = issues.findIndex((issue) => issue.id === issueId);
 
     if (index === -1) {
@@ -113,7 +113,7 @@ export class IssueService {
     };
 
     issues[index] = updatedIssue;
-    store.set("issues", issues);
+    (store as any).set("issues", issues);
     log.info("[Issue Service] Saved to store");
 
     // Update metadata in file system
@@ -129,9 +129,9 @@ export class IssueService {
     log.info("[Issue Service] === DELETE ISSUE START ===");
     log.info("[Issue Service] Issue ID:", issueId);
 
-    const issues = store.get("issues");
+    const issues = (store as any).get("issues");
     const filteredIssues = issues.filter((issue) => issue.id !== issueId);
-    store.set("issues", filteredIssues);
+    (store as any).set("issues", filteredIssues);
     log.info("[Issue Service] Removed from store");
 
     // Delete from file system
@@ -152,7 +152,7 @@ export class IssueService {
       connectorId?: string;
     }
   ): Promise<Issue> {
-    const issues = store.get("issues");
+    const issues = (store as any).get("issues");
     const index = issues.findIndex((issue) => issue.id === issueId);
 
     if (index === -1) {
@@ -176,7 +176,7 @@ export class IssueService {
       }
     }
 
-    store.set("issues", issues);
+    (store as any).set("issues", issues);
 
     // Update metadata in file system
     await storageManager.saveMetadata(issueId, issues[index]);

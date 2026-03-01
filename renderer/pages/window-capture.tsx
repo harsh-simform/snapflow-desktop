@@ -61,7 +61,7 @@ export default function WindowCapture() {
       <Head>
         <title>Select Window - SnapFlow</title>
       </Head>
-      <style jsx global>{`
+      <style jsx global={true}>{`
         html,
         body {
           background-color: transparent !important;

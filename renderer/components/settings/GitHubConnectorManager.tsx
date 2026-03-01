@@ -17,6 +17,7 @@ export function GitHubConnectorManager() {
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [loading, setLoading] = useState(true);
   const [forms, setForms] = useState<ConnectorForm[]>([]);
+  const [workspaceId, setWorkspaceId] = useState<string>("");
 
   const addNewForm = () => {
     setForms([
@@ -43,8 +44,14 @@ export function GitHubConnectorManager() {
   };
 
   useEffect(() => {
-    loadConnectors();
+    getWorkspace();
   }, []);
+
+  useEffect(() => {
+    if (workspaceId) {
+      loadConnectors();
+    }
+  }, [workspaceId]);
 
   useEffect(() => {
     // Add first form automatically if no connectors and no forms exist
@@ -53,9 +60,26 @@ export function GitHubConnectorManager() {
     }
   }, [connectors, forms, loading]);
 
+  const getWorkspace = async () => {
+    try {
+      const tenantResult = await window.api.getUserTenant();
+      if (tenantResult.success && tenantResult.data?.id) {
+        const workspacesResult = await window.api.listWorkspaces(
+          tenantResult.data.id
+        );
+        if (workspacesResult.success && workspacesResult.data?.length > 0) {
+          setWorkspaceId(workspacesResult.data[0].id);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to get workspace:", error);
+      setLoading(false);
+    }
+  };
+
   const loadConnectors = async () => {
     try {
-      const result = await window.api.listConnectors();
+      const result = await window.api.listConnectors(workspaceId);
       if (result.success) {
         const githubConnectors = (result.data || []).filter(
           (c: Connector) => c.type === "github"
@@ -104,7 +128,7 @@ export function GitHubConnectorManager() {
       });
 
       // Add the connector
-      const result = await window.api.addConnector({
+      const result = await window.api.addConnector(workspaceId, {
         name: formData.name || `${formData.owner}/${formData.repo}`,
         type: "github",
         enabled: true,
@@ -217,7 +241,8 @@ export function GitHubConnectorManager() {
                   {connector.name}
                 </h3>
                 <p className="text-sm text-gray-400 group-hover:text-gray-300 transition-colors font-mono truncate">
-                  {connector.config.owner}/{connector.config.repo}
+                  {(connector.config as any).owner}/
+                  {(connector.config as any).repo}
                 </p>
               </div>
 

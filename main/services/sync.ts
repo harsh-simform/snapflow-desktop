@@ -742,9 +742,9 @@ export class SyncService {
                 defaults: { issues: [] },
               }
             );
-            const issues = store.get("issues");
+            const issues = (store as any).get("issues");
             issues.push(issueData);
-            store.set("issues", issues);
+            (store as any).set("issues", issues);
 
             // Save metadata to file system
             const { storageManager } = await import("../utils/storage");

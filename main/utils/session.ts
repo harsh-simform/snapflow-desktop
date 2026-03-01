@@ -37,8 +37,8 @@ const sessionStore = new Store<SessionData>({
   },
 });
 
-// Log the session store path for debugging
-log.info("[Session Store] Path:", sessionStore.path);
+// Session store initialized
+log.info("[Session Store] Initialized");
 
 class SessionManager {
   private currentUser: User | null = null;
@@ -111,10 +111,10 @@ class SessionManager {
           await storageManager.ensureDirectories();
 
           // Store user data for quick access
-          sessionStore.set("user", user);
-          sessionStore.set("userId", user.id);
+          (sessionStore as any).set("user", user);
+          (sessionStore as any).set("userId", user.id);
           // Also store session tokens for backup
-          sessionStore.set("supabaseSession", {
+          (sessionStore as any).set("supabaseSession", {
             accessToken: session.access_token,
             refreshToken: session.refresh_token,
             expiresAt: session.expires_at || 0,
@@ -138,9 +138,9 @@ class SessionManager {
     } else {
       log.info("[Session] No session found");
       // Clear any stale data
-      sessionStore.set("user", null);
-      sessionStore.set("userId", null);
-      sessionStore.set("supabaseSession", null);
+      (sessionStore as any).set("user", null);
+      (sessionStore as any).set("userId", null);
+      (sessionStore as any).set("supabaseSession", null);
     }
 
     // Setup auth state listener after session check
@@ -169,7 +169,7 @@ class SessionManager {
 
       if (event === "TOKEN_REFRESHED" && session) {
         log.info("[Session] Token refreshed, updating stored session");
-        sessionStore.set("supabaseSession", {
+        (sessionStore as any).set("supabaseSession", {
           accessToken: session.access_token,
           refreshToken: session.refresh_token,
           expiresAt: session.expires_at || 0,
@@ -180,7 +180,7 @@ class SessionManager {
       } else if (event === "SIGNED_IN" && session) {
         log.info("[Session] User signed in via auth state change");
         // Update session tokens
-        sessionStore.set("supabaseSession", {
+        (sessionStore as any).set("supabaseSession", {
           accessToken: session.access_token,
           refreshToken: session.refresh_token,
           expiresAt: session.expires_at || 0,
@@ -213,9 +213,9 @@ class SessionManager {
     if (session) {
       log.info("[Session] Storing user and Supabase tokens");
       // Store both user data and Supabase tokens
-      sessionStore.set("user", user);
-      sessionStore.set("userId", user.id);
-      sessionStore.set("supabaseSession", {
+      (sessionStore as any).set("user", user);
+      (sessionStore as any).set("userId", user.id);
+      (sessionStore as any).set("supabaseSession", {
         accessToken: session.access_token,
         refreshToken: session.refresh_token,
         expiresAt: session.expires_at || 0,
@@ -231,8 +231,8 @@ class SessionManager {
     } else {
       log.warn("[Session] No Supabase session found - storing user only");
       // Just store user if no session (shouldn't happen normally)
-      sessionStore.set("user", user);
-      sessionStore.set("userId", user.id);
+      (sessionStore as any).set("user", user);
+      (sessionStore as any).set("userId", user.id);
     }
   }
 
@@ -260,9 +260,9 @@ class SessionManager {
       storageManager.clearCurrentUser();
 
       // Clear from persistent storage
-      sessionStore.set("user", null);
-      sessionStore.set("userId", null);
-      sessionStore.set("supabaseSession", null);
+      (sessionStore as any).set("user", null);
+      (sessionStore as any).set("userId", null);
+      (sessionStore as any).set("supabaseSession", null);
 
       // Sign out from Supabase
       try {
@@ -291,7 +291,7 @@ class SessionManager {
    * and our auth state change listener. This method is kept for manual refresh if needed.
    */
   async refreshSession(): Promise<void> {
-    const storedSession = sessionStore.get("supabaseSession");
+    const storedSession = (sessionStore as any).get("supabaseSession");
 
     if (storedSession) {
       try {
@@ -303,7 +303,7 @@ class SessionManager {
 
         if (session) {
           // Update stored tokens
-          sessionStore.set("supabaseSession", {
+          (sessionStore as any).set("supabaseSession", {
             accessToken: session.access_token,
             refreshToken: session.refresh_token,
             expiresAt: session.expires_at || 0,
@@ -321,7 +321,7 @@ class SessionManager {
    * Check if the current session is valid and not expired
    */
   isSessionValid(): boolean {
-    const storedSession = sessionStore.get("supabaseSession");
+    const storedSession = (sessionStore as any).get("supabaseSession");
     if (!storedSession || !this.currentUser) {
       return false;
     }

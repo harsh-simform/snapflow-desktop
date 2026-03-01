@@ -56,7 +56,7 @@ function initializeSupabase(): SupabaseClient | null {
             return null; // In renderer process, let default localStorage handle it
           }
           // In main process, retrieve from electron-store
-          const value = supabaseStore.get(key);
+          const value = (supabaseStore as any).get(key);
           return value || null;
         },
         setItem: (key: string, value: string) => {
@@ -64,14 +64,14 @@ function initializeSupabase(): SupabaseClient | null {
             return; // In renderer process, let default localStorage handle it
           }
           // In main process, store in electron-store
-          supabaseStore.set(key, value);
+          (supabaseStore as any).set(key, value);
         },
         removeItem: (key: string) => {
           if (typeof window !== "undefined") {
             return; // In renderer process, let default localStorage handle it
           }
           // In main process, remove from electron-store
-          supabaseStore.delete(key);
+          (supabaseStore as any).delete(key);
         },
       },
     },
