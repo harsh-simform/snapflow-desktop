@@ -1,5 +1,9 @@
 {
   "permissions": {
-    "allow": ["Bash(npm run lint)"]
+    "allow": [
+      "Bash(npm run lint)",
+      "Bash(npm view eslint-plugin-react-hooks versions --json)",
+      "Bash(npm ci --dry-run)"
+    ]
   }
 }
