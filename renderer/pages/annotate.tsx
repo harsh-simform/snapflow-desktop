@@ -132,7 +132,6 @@ export default function AnnotatePage() {
       cleanup();
       delete (window as any).__setScreenshot;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Separate effect for keyboard shortcuts that depend on current state

@@ -83,7 +83,12 @@ export class AuthService {
       // Handle network errors separately
       if (this.isNetworkError(networkError)) {
         log.error("[Auth Service] ✗ Network error:", networkError);
-        throw new Error("Unable to connect. Please check your internet connection.");
+        throw new Error(
+          "Unable to connect. Please check your internet connection.",
+          {
+            cause: networkError,
+          }
+        );
       }
       throw networkError;
     }
@@ -115,7 +120,10 @@ export class AuthService {
         log.error("[Auth Service] ✗ Login error:", error.message);
         // Check for specific auth errors
         const errorMsg = error.message.toLowerCase();
-        if (errorMsg.includes("invalid_credentials") || errorMsg.includes("invalid login")) {
+        if (
+          errorMsg.includes("invalid_credentials") ||
+          errorMsg.includes("invalid login")
+        ) {
           throw new Error("Invalid email or password");
         }
         throw new Error(error.message);
@@ -135,7 +143,12 @@ export class AuthService {
       // Handle network errors separately
       if (this.isNetworkError(networkError)) {
         log.error("[Auth Service] ✗ Network error:", networkError);
-        throw new Error("Unable to connect. Please check your internet connection.");
+        throw new Error(
+          "Unable to connect. Please check your internet connection.",
+          {
+            cause: networkError,
+          }
+        );
       }
       throw networkError;
     }

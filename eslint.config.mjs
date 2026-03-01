@@ -1,6 +1,7 @@
 import js from "@eslint/js";
 import typescript from "@typescript-eslint/eslint-plugin";
 import typescriptParser from "@typescript-eslint/parser";
+import reactHooks from "eslint-plugin-react-hooks";
 import prettier from "eslint-config-prettier";
 
 export default [
@@ -39,6 +40,8 @@ export default [
         alert: "readonly",
         confirm: "readonly",
         fetch: "readonly",
+        atob: "readonly",
+        btoa: "readonly",
         Image: "readonly",
         FormData: "readonly",
         Blob: "readonly",
@@ -98,6 +101,7 @@ export default [
     },
     plugins: {
       "@typescript-eslint": typescript,
+      "react-hooks": reactHooks,
     },
     rules: {
       ...js.configs.recommended.rules,
@@ -107,10 +111,13 @@ export default [
         {
           argsIgnorePattern: "^_",
           varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
         },
       ],
       "@typescript-eslint/no-explicit-any": "warn",
       "@typescript-eslint/use-unknown-in-catch-callback": "off",
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
       "no-console": "off",
       "no-throw-literal": "off",
     },

@@ -13,7 +13,10 @@ export class ConnectorService {
    * Get all connectors for a workspace
    */
   async getConnectors(workspaceId: string): Promise<Connector[]> {
-    log.info("[Connector Service] Fetching connectors for workspace:", workspaceId);
+    log.info(
+      "[Connector Service] Fetching connectors for workspace:",
+      workspaceId
+    );
 
     const supabase = getSupabase();
     if (!supabase) {
@@ -32,7 +35,7 @@ export class ConnectorService {
       throw new Error("Failed to fetch connectors");
     }
 
-    const connectors = (data || []).map(c => this.mapSupabaseConnector(c));
+    const connectors = (data || []).map((c) => this.mapSupabaseConnector(c));
     log.info("[Connector Service] ✓ Found", connectors.length, "connectors");
     return connectors;
   }
@@ -100,8 +103,13 @@ export class ConnectorService {
       throw new Error("Failed to fetch connectors");
     }
 
-    const connectors = (data || []).map(c => this.mapSupabaseConnector(c));
-    log.info("[Connector Service] ✓ Found", connectors.length, type, "connectors");
+    const connectors = (data || []).map((c) => this.mapSupabaseConnector(c));
+    log.info(
+      "[Connector Service] ✓ Found",
+      connectors.length,
+      type,
+      "connectors"
+    );
     return connectors;
   }
 
@@ -113,7 +121,12 @@ export class ConnectorService {
     owner: string,
     repo: string
   ): Promise<Connector | null> {
-    log.info("[Connector Service] Fetching GitHub connector for repo:", owner, "/", repo);
+    log.info(
+      "[Connector Service] Fetching GitHub connector for repo:",
+      owner,
+      "/",
+      repo
+    );
 
     const supabase = getSupabase();
     if (!supabase) {
@@ -135,7 +148,10 @@ export class ConnectorService {
         log.info("[Connector Service] GitHub connector not found");
         return null;
       }
-      log.error("[Connector Service] ✗ Failed to fetch connector by repo:", error);
+      log.error(
+        "[Connector Service] ✗ Failed to fetch connector by repo:",
+        error
+      );
       throw new Error("Failed to fetch connector by repo");
     }
 
@@ -160,7 +176,10 @@ export class ConnectorService {
   async addConnector(
     userId: string,
     workspaceId: string,
-    connector: Omit<Connector, "id" | "workspaceId" | "createdBy" | "createdAt" | "updatedAt">
+    connector: Omit<
+      Connector,
+      "id" | "workspaceId" | "createdBy" | "createdAt" | "updatedAt"
+    >
   ): Promise<Connector> {
     log.info("[Connector Service] === ADD CONNECTOR START ===");
     log.info("[Connector Service] User ID:", userId);
@@ -187,7 +206,11 @@ export class ConnectorService {
       "owner" in connector.config &&
       "repo" in connector.config
     ) {
-      const config = connector.config as { owner: string; repo: string; [key: string]: unknown };
+      const config = connector.config as {
+        owner: string;
+        repo: string;
+        [key: string]: unknown;
+      };
       const existing = await this.getConnectorByRepo(
         workspaceId,
         config.owner,
@@ -282,10 +305,7 @@ export class ConnectorService {
       throw new Error("Supabase not configured");
     }
 
-    const { error } = await supabase
-      .from("connectors")
-      .delete()
-      .eq("id", id);
+    const { error } = await supabase.from("connectors").delete().eq("id", id);
 
     if (error) {
       log.error("[Connector Service] ✗ Failed to delete connector:", error);
@@ -303,7 +323,12 @@ export class ConnectorService {
     owner: string,
     repo: string
   ): Promise<boolean> {
-    log.info("[Connector Service] Validating GitHub connector for:", owner, "/", repo);
+    log.info(
+      "[Connector Service] Validating GitHub connector for:",
+      owner,
+      "/",
+      repo
+    );
 
     try {
       const response = await axios.get(
@@ -323,7 +348,9 @@ export class ConnectorService {
       if (canPush) {
         log.info("[Connector Service] ✓ GitHub connector validation passed");
       } else {
-        log.warn("[Connector Service] ✗ Insufficient permissions on repository");
+        log.warn(
+          "[Connector Service] ✗ Insufficient permissions on repository"
+        );
       }
 
       return canPush;
@@ -340,7 +367,10 @@ export class ConnectorService {
     accessToken: string,
     portalId: string
   ): Promise<boolean> {
-    log.info("[Connector Service] Validating Zoho connector for portal:", portalId);
+    log.info(
+      "[Connector Service] Validating Zoho connector for portal:",
+      portalId
+    );
 
     try {
       // Stub: In a real implementation, this would call Zoho API
@@ -390,7 +420,11 @@ export class ConnectorService {
       // Check if file already exists
       let sha: string | undefined;
       try {
-        const config = connector.config as { owner: string; repo: string; accessToken: string };
+        const config = connector.config as {
+          owner: string;
+          repo: string;
+          accessToken: string;
+        };
         const existingFile = await axios.get(
           `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${screenshotPath}`,
           {
@@ -406,7 +440,11 @@ export class ConnectorService {
         log.info("[GitHub] File does not exist, will create new");
       }
 
-      const config = connector.config as { owner: string; repo: string; accessToken: string };
+      const config = connector.config as {
+        owner: string;
+        repo: string;
+        accessToken: string;
+      };
       const uploadPayload: Record<string, unknown> = {
         message: `Add screenshot for issue #${issueNumber}`,
         content: base64Content,
@@ -484,7 +522,11 @@ export class ConnectorService {
       type?: "screenshot" | "recording";
     }
   ): Promise<{ issueNumber: number; url: string; isUpdate: boolean }> {
-    const config = connector.config as { owner: string; repo: string; accessToken: string };
+    const config = connector.config as {
+      owner: string;
+      repo: string;
+      accessToken: string;
+    };
 
     if (!config.accessToken || !config.owner || !config.repo) {
       throw new Error("GitHub connector not properly configured");
@@ -505,7 +547,10 @@ export class ConnectorService {
         : null;
 
       if (issueNumber) {
-        log.info("[GitHub] Issue already exists, updating issue #", issueNumber);
+        log.info(
+          "[GitHub] Issue already exists, updating issue #",
+          issueNumber
+        );
 
         try {
           let mediaUrl = issue.cloudFileUrl;
@@ -552,7 +597,11 @@ export class ConnectorService {
           };
         } catch (updateError) {
           if (updateError.response?.status === 410) {
-            log.info("[GitHub] Issue #", issueNumber, "was deleted, creating a new issue...");
+            log.info(
+              "[GitHub] Issue #",
+              issueNumber,
+              "was deleted, creating a new issue..."
+            );
             // Fall through to create new issue
           } else {
             throw updateError;
@@ -630,23 +679,37 @@ export class ConnectorService {
     } catch (error) {
       log.error("GitHub sync error:", error);
       if (error.response?.status === 401) {
-        throw new Error("GitHub access token is invalid or expired");
+        throw new Error("GitHub access token is invalid or expired", {
+          cause: error,
+        });
       } else if (error.response?.status === 404) {
-        throw new Error("Repository not found or access denied");
+        throw new Error("Repository not found or access denied", {
+          cause: error,
+        });
       } else if (error.response?.status === 403) {
         throw new Error(
-          "GitHub API rate limit exceeded or insufficient permissions"
+          "GitHub API rate limit exceeded or insufficient permissions",
+          {
+            cause: error,
+          }
         );
       } else if (error.response?.status === 410) {
-        throw new Error("GitHub issue was deleted and could not be recreated");
+        throw new Error("GitHub issue was deleted and could not be recreated", {
+          cause: error,
+        });
       } else if (error.response?.status === 422) {
         const message = error.response?.data?.message || "Validation failed";
         const errors = error.response?.data?.errors || [];
         log.error("[GitHub] Validation error:", message, errors);
-        throw new Error(`GitHub validation error: ${message}`);
+        throw new Error(`GitHub validation error: ${message}`, {
+          cause: error,
+        });
       }
       throw new Error(
-        `Failed to sync to GitHub: ${error.response?.data?.message || error.message}`
+        `Failed to sync to GitHub: ${error.response?.data?.message || error.message}`,
+        {
+          cause: error,
+        }
       );
     }
   }

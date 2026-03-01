@@ -153,7 +153,6 @@ export function GitHubConnectorManager() {
   };
 
   const handleDeleteConnector = async (id: string, name: string) => {
-    // eslint-disable-next-line no-undef
     const confirmed = confirm(
       `🗑️ Remove "${name}"?\n\nThis will disconnect the repository. You can always reconnect it later.`
     );

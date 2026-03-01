@@ -1,6 +1,10 @@
 import { getSupabase } from "../utils/supabase";
 import log from "electron-log";
-import type { Workspace, WorkspaceMember, UserRole } from "../../renderer/types";
+import type {
+  Workspace,
+  WorkspaceMember,
+  UserRole,
+} from "../../renderer/types";
 
 /**
  * Helper: Slugify a string
@@ -73,7 +77,10 @@ export class WorkspaceService {
       .single();
 
     if (workspaceError) {
-      log.error("[Workspace Service] ✗ Create workspace error:", workspaceError.message);
+      log.error(
+        "[Workspace Service] ✗ Create workspace error:",
+        workspaceError.message
+      );
       throw new Error(workspaceError.message);
     }
 
@@ -95,7 +102,10 @@ export class WorkspaceService {
       });
 
     if (memberError) {
-      log.error("[Workspace Service] ✗ Error adding creator as member:", memberError.message);
+      log.error(
+        "[Workspace Service] ✗ Error adding creator as member:",
+        memberError.message
+      );
       // Don't throw — workspace was created, member add just failed (maybe duplicate)
       // Let the workspace be created anyway
     } else {
@@ -131,7 +141,7 @@ export class WorkspaceService {
       return [];
     }
 
-    return (data || []).map(ws => this.mapSupabaseWorkspace(ws));
+    return (data || []).map((ws) => this.mapSupabaseWorkspace(ws));
   }
 
   /**
@@ -233,7 +243,7 @@ export class WorkspaceService {
       return [];
     }
 
-    return (data || []).map(m => this.mapSupabaseWorkspaceMember(m));
+    return (data || []).map((m) => this.mapSupabaseWorkspaceMember(m));
   }
 
   /**
@@ -279,8 +289,10 @@ export class WorkspaceService {
         // User will need to accept the invite when they click the email link
         return;
       }
-    } catch (err) {
-      log.warn("[Workspace Service] Admin API not available, falling back to OTP");
+    } catch (_err) {
+      log.warn(
+        "[Workspace Service] Admin API not available, falling back to OTP"
+      );
     }
 
     // Fallback: OTP-based magic link

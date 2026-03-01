@@ -857,7 +857,7 @@ async function _createRecordingControlWindow(bounds: {
 }
 
 // Recording workflow functions
-async function handleStartRecordingFlow() {
+async function _handleStartRecordingFlow() {
   try {
     log.info("[Recording] Starting recording flow");
     recordingState = "selecting";
@@ -996,7 +996,7 @@ async function handleRecordingAreaSelected(bounds: {
 // Note: handleBeginRecording is no longer needed as recording starts immediately
 // after area selection in handleRecordingAreaSelected()
 
-async function handleStopRecording() {
+async function _handleStopRecording() {
   try {
     log.info("[Recording] Stopping recording");
 
@@ -1249,7 +1249,7 @@ if (app && app.requestSingleInstanceLock) {
       log.info("[OAuth] Extracted tokens from callback");
 
       // Set session in Supabase
-      const session = await authService.setSession(accessToken, refreshToken);
+      const _session = await authService.setSession(accessToken, refreshToken);
       log.info("[OAuth] Session set successfully");
 
       // Get current user
@@ -1291,7 +1291,9 @@ if (app && app.requestSingleInstanceLock) {
     // Handle Windows/Linux second instance with command line args
     app.on("second-instance", async (_event, commandLine) => {
       // Check if one of the command line arguments is the OAuth callback
-      const callbackUrl = commandLine.find(arg => arg.startsWith("snapflow://auth/callback"));
+      const callbackUrl = commandLine.find((arg) =>
+        arg.startsWith("snapflow://auth/callback")
+      );
       if (callbackUrl) {
         log.info("[Deep Link] Second instance OAuth callback detected");
         handleOAuthCallback(callbackUrl);
@@ -1596,7 +1598,11 @@ function setupIPCHandlers() {
       if (!userId) {
         throw new Error("User not authenticated");
       }
-      const tenant = await tenantService.createTenant(userId, name, description);
+      const tenant = await tenantService.createTenant(
+        userId,
+        name,
+        description
+      );
       return { success: true, data: tenant };
     } catch (error) {
       const errorMessage =
@@ -1623,26 +1629,31 @@ function setupIPCHandlers() {
   });
 
   // Workspace handlers
-  ipcMain.handle("workspace:create", async (_event, { tenantId, name, description }) => {
-    try {
-      const userId = sessionManager.getUserId();
-      if (!userId) {
-        throw new Error("User not authenticated");
+  ipcMain.handle(
+    "workspace:create",
+    async (_event, { tenantId, name, description }) => {
+      try {
+        const userId = sessionManager.getUserId();
+        if (!userId) {
+          throw new Error("User not authenticated");
+        }
+        const workspace = await workspaceService.createWorkspace(
+          userId,
+          tenantId,
+          name,
+          description
+        );
+        return { success: true, data: workspace };
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : "An unexpected error occurred";
+        log.error("Create workspace error:", error);
+        return { success: false, error: errorMessage };
       }
-      const workspace = await workspaceService.createWorkspace(
-        userId,
-        tenantId,
-        name,
-        description
-      );
-      return { success: true, data: workspace };
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "An unexpected error occurred";
-      log.error("Create workspace error:", error);
-      return { success: false, error: errorMessage };
     }
-  });
+  );
 
   ipcMain.handle("workspace:list", async (_event, { tenantId }) => {
     try {
@@ -1665,7 +1676,9 @@ function setupIPCHandlers() {
         return { success: true };
       } catch (error) {
         const errorMessage =
-          error instanceof Error ? error.message : "An unexpected error occurred";
+          error instanceof Error
+            ? error.message
+            : "An unexpected error occurred";
         log.error("Invite team member error:", error);
         return { success: false, error: errorMessage };
       }
@@ -1702,9 +1715,13 @@ function setupIPCHandlers() {
       }
 
       const tenant = await tenantService.getTenantByOwner(userId);
-      const workspaces = tenant ? await workspaceService.listWorkspaces(tenant.id) : [];
+      const workspaces = tenant
+        ? await workspaceService.listWorkspaces(tenant.id)
+        : [];
       const workspace = workspaces[0] ?? null;
-      const connectors = workspace ? await connectorService.getConnectors(workspace.id) : [];
+      const connectors = workspace
+        ? await connectorService.getConnectors(workspace.id)
+        : [];
 
       const hasTenant = !!tenant;
       const hasWorkspace = !!workspace;
@@ -2172,25 +2189,30 @@ function setupIPCHandlers() {
     }
   });
 
-  ipcMain.handle("connector:add", async (_event, { workspaceId, ...connector }) => {
-    try {
-      const user = sessionManager.getUser();
-      if (!user) {
-        throw new Error("User not authenticated");
+  ipcMain.handle(
+    "connector:add",
+    async (_event, { workspaceId, ...connector }) => {
+      try {
+        const user = sessionManager.getUser();
+        if (!user) {
+          throw new Error("User not authenticated");
+        }
+        const newConnector = await connectorService.addConnector(
+          user.id,
+          workspaceId,
+          connector
+        );
+        return { success: true, data: newConnector };
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : "An unexpected error occurred";
+        log.error("IPC Handler error:", error);
+        return { success: false, error: errorMessage };
       }
-      const newConnector = await connectorService.addConnector(
-        user.id,
-        workspaceId,
-        connector
-      );
-      return { success: true, data: newConnector };
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "An unexpected error occurred";
-      log.error("IPC Handler error:", error);
-      return { success: false, error: errorMessage };
     }
-  });
+  );
 
   ipcMain.handle("connector:update", async (_event, { id, updates }) => {
     try {

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import Head from "next/head";
 import { useRouter } from "next/router";

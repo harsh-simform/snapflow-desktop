@@ -90,7 +90,7 @@ export default function AnnotateRecording() {
     router.push("/home");
   };
 
-  const generateVideoThumbnail = async (
+  const _generateVideoThumbnail = async (
     videoFilePath: string
   ): Promise<string> => {
     // This would ideally extract a frame from the video

@@ -18,14 +18,14 @@ export default function AreaCapture() {
     null
   );
   const [selection, setSelection] = useState<SelectionBounds | null>(null);
-  const [scaleFactor, setScaleFactor] = useState(1);
-  const [displayBounds, setDisplayBounds] = useState<{
+  const [_scaleFactor, setScaleFactor] = useState(1);
+  const [_displayBounds, setDisplayBounds] = useState<{
     x: number;
     y: number;
     width: number;
     height: number;
   } | null>(null);
-  const [overlayBounds, setOverlayBounds] = useState<{
+  const [_overlayBounds, setOverlayBounds] = useState<{
     x: number;
     y: number;
     width: number;

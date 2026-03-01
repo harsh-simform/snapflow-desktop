@@ -2,12 +2,7 @@ import React, { useState, useEffect } from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
 import { toast } from "sonner";
-import type {
-  Tenant,
-  Workspace,
-  OnboardingStatus,
-  UserRole,
-} from "../types";
+import type { Tenant, Workspace, OnboardingStatus, UserRole } from "../types";
 import { WindowControls } from "../components/ui/WindowControls";
 import { Button } from "../components/ui/Button";
 
@@ -39,8 +34,8 @@ export default function OnboardingPage() {
   const [invites, setInvites] = useState<
     Array<{ id: string; email: string; role: UserRole }>
   >([]);
-  const [newInviteEmail, setNewInviteEmail] = useState("");
-  const [newInviteRole, setNewInviteRole] = useState<UserRole>("dev");
+  const [_newInviteEmail, _setNewInviteEmail] = useState("");
+  const [_newInviteRole, _setNewInviteRole] = useState<UserRole>("dev");
   const [invitesSending, setInvitesSending] = useState(false);
 
   // Step 3: Workspace form
@@ -105,13 +100,11 @@ export default function OnboardingPage() {
     setError("");
 
     try {
-      const slug = slugify(tenantName);
+      const _slug = slugify(tenantName);
       const result = await window.api.createTenant(tenantName, "");
 
       if (!result.success) {
-        setError(
-          result.error || "Failed to create organization"
-        );
+        setError(result.error || "Failed to create organization");
         setSaving(false);
         return;
       }
@@ -138,7 +131,7 @@ export default function OnboardingPage() {
 
   // Handle removing invite row
   function handleRemoveInvite(id: string) {
-    setInvites(invites.filter(inv => inv.id !== id));
+    setInvites(invites.filter((inv) => inv.id !== id));
   }
 
   // Handle sending invites
@@ -148,7 +141,7 @@ export default function OnboardingPage() {
       return;
     }
 
-    const validInvites = invites.filter(inv => inv.email.trim());
+    const validInvites = invites.filter((inv) => inv.email.trim());
     if (validInvites.length === 0) {
       toast.info("No valid emails to invite");
       setStep(3);
@@ -183,9 +176,7 @@ export default function OnboardingPage() {
     setInvitesSending(false);
 
     if (failureCount > 0) {
-      toast.warning(
-        `Sent ${successCount} invites, ${failureCount} failed`
-      );
+      toast.warning(`Sent ${successCount} invites, ${failureCount} failed`);
     } else {
       toast.success(`Sent ${successCount} invites successfully!`);
     }
@@ -504,7 +495,10 @@ export default function OnboardingPage() {
                   </div>
                   {tenantSlug && (
                     <div className="text-sm text-gray-400">
-                      Slug: <code className="bg-gray-800 px-2 py-1 rounded">{tenantSlug}</code>
+                      Slug:{" "}
+                      <code className="bg-gray-800 px-2 py-1 rounded">
+                        {tenantSlug}
+                      </code>
                     </div>
                   )}
                   <Button
