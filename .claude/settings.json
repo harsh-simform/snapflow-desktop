@@ -4,7 +4,8 @@
       "Bash(npm run lint)",
       "Bash(npm view eslint-plugin-react-hooks versions --json)",
       "Bash(npm ci --dry-run)",
-      "Bash(npm run lint:fix)"
+      "Bash(npm run lint:fix)",
+      "Bash(npm run lint -- --fix)"
     ]
   }
 }

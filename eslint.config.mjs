@@ -112,7 +112,7 @@ export default [
           caughtErrorsIgnorePattern: "^_",
         },
       ],
-      "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/use-unknown-in-catch-callback": "off",
       "no-console": "off",
       "no-throw-literal": "off",

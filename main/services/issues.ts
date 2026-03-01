@@ -62,10 +62,9 @@ export class IssueService {
 
     log.info("[Issue Service] Generated issue ID:", issue.id);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const issues = (store as any).get("issues");
     issues.push(issue);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     (store as any).set("issues", issues);
     log.info("[Issue Service] Saved to store, total issues:", issues.length);
 
@@ -80,7 +79,7 @@ export class IssueService {
 
   getIssues(userId?: string): Issue[] {
     log.info("[Issue Service] Getting issues for user:", userId || "all");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     const issues = (store as any).get("issues");
     if (userId) {
       const filtered = issues.filter((issue) => issue.userId === userId);
@@ -92,7 +91,6 @@ export class IssueService {
   }
 
   getIssueById(issueId: string): Issue | undefined {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const issues = (store as any).get("issues");
     return issues.find((issue) => issue.id === issueId);
   }
@@ -102,7 +100,6 @@ export class IssueService {
     log.info("[Issue Service] Issue ID:", issueId);
     log.info("[Issue Service] Updates:", JSON.stringify(updates));
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const issues = (store as any).get("issues");
     const index = issues.findIndex((issue) => issue.id === issueId);
 
@@ -118,7 +115,7 @@ export class IssueService {
     };
 
     issues[index] = updatedIssue;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     (store as any).set("issues", issues);
     log.info("[Issue Service] Saved to store");
 
@@ -135,10 +132,9 @@ export class IssueService {
     log.info("[Issue Service] === DELETE ISSUE START ===");
     log.info("[Issue Service] Issue ID:", issueId);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const issues = (store as any).get("issues");
     const filteredIssues = issues.filter((issue) => issue.id !== issueId);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     (store as any).set("issues", filteredIssues);
     log.info("[Issue Service] Removed from store");
 
@@ -160,7 +156,6 @@ export class IssueService {
       connectorId?: string;
     }
   ): Promise<Issue> {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const issues = (store as any).get("issues");
     const index = issues.findIndex((issue) => issue.id === issueId);
 
@@ -185,7 +180,6 @@ export class IssueService {
       }
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (store as any).set("issues", issues);
 
     // Update metadata in file system

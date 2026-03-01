@@ -742,10 +742,10 @@ export class SyncService {
                 defaults: { issues: [] },
               }
             );
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
             const issues = (store as any).get("issues");
             issues.push(issueData);
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
             (store as any).set("issues", issues);
 
             // Save metadata to file system

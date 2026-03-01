@@ -56,7 +56,7 @@ function initializeSupabase(): SupabaseClient | null {
             return null; // In renderer process, let default localStorage handle it
           }
           // In main process, retrieve from electron-store
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
           const value = (supabaseStore as any).get(key);
           return value || null;
         },
@@ -65,7 +65,7 @@ function initializeSupabase(): SupabaseClient | null {
             return; // In renderer process, let default localStorage handle it
           }
           // In main process, store in electron-store
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
           (supabaseStore as any).set(key, value);
         },
         removeItem: (key: string) => {
@@ -73,7 +73,7 @@ function initializeSupabase(): SupabaseClient | null {
             return; // In renderer process, let default localStorage handle it
           }
           // In main process, remove from electron-store
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
           (supabaseStore as any).delete(key);
         },
       },

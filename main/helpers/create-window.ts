@@ -73,7 +73,7 @@ export const createWindow = (
     if (!win.isMinimized() && !win.isMaximized()) {
       Object.assign(state, getCurrentPosition());
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     (store as any).set(key, state);
   };
 
