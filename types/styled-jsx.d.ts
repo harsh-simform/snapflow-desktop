@@ -1,11 +1,15 @@
-declare namespace JSX {
-  interface IntrinsicElements {
-    style: {
-      jsx?: boolean | undefined;
-      global?: boolean | undefined;
-      dynamic?: string | string[] | undefined;
-      children?: string | undefined;
-      [key: string]: any;
-    };
+/* eslint-disable no-undef */
+import React from "react";
+
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      style: React.StyleHTMLAttributes<HTMLStyleElement> & {
+        jsx?: boolean;
+        global?: boolean;
+        dynamic?: string | string[];
+        children?: string;
+      };
+    }
   }
 }
