@@ -31,6 +31,11 @@ const {
   globalShortcut,
 } = electron;
 
+// Catch any genuinely unhandled promise rejections so they don't crash the app.
+process.on("unhandledRejection", (reason: unknown) => {
+  log.error("[Process] Unhandled promise rejection:", reason);
+});
+
 // Determine if we're in production
 const isProd = process.env.NODE_ENV === "production";
 
@@ -187,28 +192,41 @@ async function createMainWindow() {
     }
   );
 
-  // Check if user is already logged in (session exists)
-  const currentUser = sessionManager.getUser();
-  let hasUser = false;
+  const port = process.argv[2];
 
+  // Navigate to a route, falling back to /500 on load failure
+  const navigateTo = async (route: string) => {
+    if (isProd) {
+      await mainWindow!.loadURL(`app://.${route}`);
+    } else {
+      await mainWindow!.loadURL(`http://localhost:${port}${route}`);
+      mainWindow!.webContents.openDevTools();
+    }
+  };
+
+  // Show 500 error page if the renderer fails to load
+  mainWindow.webContents.on(
+    "did-fail-load",
+    (_event, errorCode, errorDescription) => {
+      if (errorCode === -3) return; // ERR_ABORTED — user navigated away, not a real failure
+      log.error(
+        `[Window] Page failed to load (${errorCode}: ${errorDescription})`
+      );
+      navigateTo("/500").catch((err) =>
+        log.error("[Window] Failed to load error page:", err)
+      );
+    }
+  );
+
+  // Route based on stored session (no network call) — renderer re-checks auth on load
+  const initialRoute = sessionManager.hasStoredSession() ? "/home" : "/auth";
   try {
-    hasUser = await authService.hasAnyUser();
-  } catch (error) {
-    log.error("Database connection error:", error);
-    // Will show database setup screen
-  }
-
-  // Route logic:
-  // - If session exists and is valid, go to home
-  // - Otherwise, go to auth
-  const route = currentUser && hasUser ? "/home" : "/auth";
-
-  if (isProd) {
-    await mainWindow.loadURL(`app://.${route}`);
-  } else {
-    const port = process.argv[2];
-    await mainWindow.loadURL(`http://localhost:${port}${route}`);
-    mainWindow.webContents.openDevTools();
+    await navigateTo(initialRoute);
+  } catch (err) {
+    log.error("[Window] Initial load failed:", err);
+    await navigateTo("/500").catch((e) =>
+      log.error("[Window] Failed to load error page:", e)
+    );
   }
 
   return mainWindow;
@@ -1229,29 +1247,37 @@ const handleOAuthCallback = async (url: string) => {
   log.info("[OAuth] Handling callback URL:", url);
 
   try {
-    // Parse hash fragment to extract tokens
-    // URL format: snapflow://auth/callback#access_token=...&refresh_token=...&expires_in=...
-    const hashIndex = url.indexOf("#");
-    if (hashIndex === -1) {
-      log.warn("[OAuth] No hash fragment found in callback URL");
-      return;
+    // Supabase v2 uses PKCE by default: callback has ?code=... in query params.
+    // Older implicit flow puts tokens in the hash (#access_token=...).
+    // Try PKCE first, fall back to implicit.
+    const parsedUrl = new URL(url);
+    const code = parsedUrl.searchParams.get("code");
+
+    if (code) {
+      // PKCE flow — exchange authorization code for session
+      log.info("[OAuth] PKCE flow detected, exchanging code for session");
+      const session = await authService.exchangeCodeForSession(url);
+      if (!session) {
+        log.error("[OAuth] Failed to exchange code for session");
+        return;
+      }
+      log.info("[OAuth] Session exchanged successfully");
+    } else {
+      // Implicit flow — extract tokens from hash fragment
+      const hashFragment = url.substring(url.indexOf("#") + 1);
+      const params = new URLSearchParams(hashFragment);
+      const accessToken = params.get("access_token");
+      const refreshToken = params.get("refresh_token");
+
+      if (!accessToken || !refreshToken) {
+        log.warn("[OAuth] No code or tokens found in callback URL:", url);
+        return;
+      }
+
+      log.info("[OAuth] Implicit flow detected, setting session from tokens");
+      await authService.setSession(accessToken, refreshToken);
+      log.info("[OAuth] Session set successfully");
     }
-
-    const hashFragment = url.substring(hashIndex + 1);
-    const params = new URLSearchParams(hashFragment);
-    const accessToken = params.get("access_token");
-    const refreshToken = params.get("refresh_token");
-
-    if (!accessToken || !refreshToken) {
-      log.warn("[OAuth] Missing tokens in callback URL");
-      return;
-    }
-
-    log.info("[OAuth] Extracted tokens from callback");
-
-    // Set session in Supabase
-    await authService.setSession(accessToken, refreshToken);
-    log.info("[OAuth] Session set successfully");
 
     // Get current user
     const user = await authService.getCurrentUser();
@@ -1284,6 +1310,17 @@ if (app && app.requestSingleInstanceLock) {
     // Another instance is already running, quit this one
     app.quit();
   } else {
+    // Register snapflow:// as the default protocol handler so the OS routes
+    // OAuth callback URLs back to this app after the browser completes sign-in.
+    // In dev mode, Electron needs the executable path + script path explicitly.
+    if (isProd) {
+      app.setAsDefaultProtocolClient("snapflow");
+    } else {
+      app.setAsDefaultProtocolClient("snapflow", process.execPath, [
+        path.resolve(process.argv[1]),
+      ]);
+    }
+
     // Handle macOS deep link (open-url event)
     app.on("open-url", (event, url) => {
       event.preventDefault();
@@ -1332,10 +1369,29 @@ if (app && app.requestSingleInstanceLock) {
         app.dock?.show();
       }
 
-      // Register custom protocol for local file access
+      // Register custom protocol for local file access.
+      // IMPORTANT: OAuth deep-link callbacks arrive as snapflow://auth/callback?code=...
+      // Those must NOT be handled here — they are handled by the open-url / second-instance
+      // events above.  Skip them so the OS deep-link routing works correctly.
       protocol.registerFileProtocol("snapflow", (request, callback) => {
+        const rawUrl = request.url;
+
+        // Pass OAuth callback URLs through — do not try to serve them as files.
+        if (rawUrl.startsWith("snapflow://auth/")) {
+          log.info(
+            "[Protocol] Skipping file-serve for OAuth callback URL:",
+            rawUrl
+          );
+          // Trigger the OAuth callback handler directly from here as a safety net,
+          // because on macOS the open-url event fires before the app is ready in
+          // some cases and can be missed.
+          handleOAuthCallback(rawUrl);
+          callback({ error: -3 }); // ERR_FILE_NOT_FOUND — benign, browser already closed
+          return;
+        }
+
         // Remove protocol - handle both snapflow:// and snapflow:///
-        let url = request.url.substring("snapflow://".length);
+        let url = rawUrl.substring("snapflow://".length);
 
         // Ensure absolute path starts with /
         if (!url.startsWith("/")) {
@@ -1359,8 +1415,10 @@ if (app && app.requestSingleInstanceLock) {
         }
       });
 
-      // Initialize session from persistent storage
-      await sessionManager.initialize();
+      // Initialize session from persistent storage (non-blocking — renderer handles auth state)
+      sessionManager.initialize().catch((err) => {
+        log.error("[App] Session initialization failed:", err);
+      });
 
       // Initialize storage
       await storageManager.ensureDirectories();

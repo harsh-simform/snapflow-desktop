@@ -51,6 +51,8 @@ export default [
         RequestInfo: "readonly",
         RequestInit: "readonly",
         AbortController: "readonly",
+        Headers: "readonly",
+        Response: "readonly",
         // DOM Types
         HTMLElement: "readonly",
         HTMLButtonElement: "readonly",

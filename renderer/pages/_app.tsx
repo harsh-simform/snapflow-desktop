@@ -23,7 +23,7 @@ function MyApp({ Component, pageProps }: AppProps) {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const publicRoutes = ["/auth"];
+      const publicRoutes = ["/auth", "/500"];
 
       // Skip auth checks for public routes
       if (publicRoutes.includes(router.pathname)) {
