@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Button } from "../ui/Button";
+import type { Tenant, Workspace } from "../../types";
 
 interface User {
   id: string;
@@ -12,6 +13,8 @@ interface User {
 
 export const AccountSection: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
+  const [tenant, setTenant] = useState<Tenant | null>(null);
+  const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [formData, setFormData] = useState({
@@ -22,6 +25,7 @@ export const AccountSection: React.FC = () => {
 
   useEffect(() => {
     loadUser();
+    loadWorkspaceAndTenant();
   }, []);
 
   const loadUser = async () => {
@@ -37,6 +41,24 @@ export const AccountSection: React.FC = () => {
     } catch (error) {
       console.error("Failed to load user:", error);
       toast.error("Failed to load user information");
+    }
+  };
+
+  const loadWorkspaceAndTenant = async () => {
+    try {
+      const tenantResult = await window.api.getUserTenant();
+      if (tenantResult.success && tenantResult.data) {
+        setTenant(tenantResult.data);
+
+        const workspacesResult = await window.api.listWorkspaces(
+          tenantResult.data.id
+        );
+        if (workspacesResult.success && workspacesResult.data?.length > 0) {
+          setWorkspace(workspacesResult.data[0]);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load workspace and tenant:", error);
     } finally {
       setLoading(false);
     }
@@ -209,6 +231,49 @@ export const AccountSection: React.FC = () => {
             </Button>
           </div>
         )}
+      </div>
+
+      {/* Organization Section */}
+      <div className="bg-gray-900/50 border border-gray-800/50 rounded-xl p-6">
+        <h3 className="text-lg font-semibold text-gray-100 mb-6">
+          Organization
+        </h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Tenant */}
+          <div>
+            <label className="block text-sm font-medium text-gray-400 mb-2">
+              Organization Name
+            </label>
+            {tenant ? (
+              <div>
+                <p className="text-base text-gray-100 mb-2">{tenant.name}</p>
+                <p className="text-xs text-gray-500 font-mono bg-gray-800/50 px-3 py-2 rounded-lg break-all">
+                  {tenant.slug}
+                </p>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">No organization found</p>
+            )}
+          </div>
+
+          {/* Workspace */}
+          <div>
+            <label className="block text-sm font-medium text-gray-400 mb-2">
+              Current Workspace
+            </label>
+            {workspace ? (
+              <div>
+                <p className="text-base text-gray-100 mb-2">{workspace.name}</p>
+                <p className="text-xs text-gray-500 font-mono bg-gray-800/50 px-3 py-2 rounded-lg break-all">
+                  {workspace.slug}
+                </p>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">No workspace found</p>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -375,12 +375,7 @@ export default function OnboardingPage() {
 
   // Handle completing onboarding
   async function handleComplete() {
-    if (connectors.length === 0) {
-      setError("At least one connector is required");
-      return;
-    }
-
-    // All steps are complete - navigate to home
+    // Connectors are optional - can complete without any
     router.push("/home");
   }
 
@@ -640,17 +635,28 @@ export default function OnboardingPage() {
             {/* Step 4: Add Connectors */}
             {step === 4 && (
               <div className="bg-gray-900 rounded-xl p-8 border border-gray-800">
-                <div className="flex justify-between items-center mb-6">
+                <div className="flex justify-between items-center mb-2">
                   <h2 className="text-2xl font-bold text-gray-100">
                     Connect Your Tools
                   </h2>
                 </div>
+                <p className="text-gray-400 text-sm mb-6">
+                  Optional – add connectors to sync screenshots, or set them up
+                  later in Settings
+                </p>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                   {/* GitHub Card */}
                   <div className="bg-gray-800/50 rounded-lg p-6 border border-gray-700">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="font-semibold text-gray-100">GitHub</h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold text-gray-100">GitHub</h3>
+                        {connectorAddedType !== "github" && (
+                          <span className="text-xs bg-blue-500/20 text-blue-300 px-2 py-1 rounded">
+                            Optional
+                          </span>
+                        )}
+                      </div>
                       {connectorAddedType === "github" && (
                         <span className="text-green-400 text-lg">✓</span>
                       )}
@@ -658,6 +664,10 @@ export default function OnboardingPage() {
 
                     {connectorAddedType !== "github" ? (
                       <div className="space-y-3">
+                        <div className="text-xs text-gray-400 bg-blue-900/20 border border-blue-800/20 p-2 rounded mb-2">
+                          Need a token? Go to GitHub → Settings → Developer
+                          settings → Personal access tokens → Generate new token
+                        </div>
                         <input
                           type="password"
                           value={githubToken}
@@ -718,7 +728,16 @@ export default function OnboardingPage() {
                   {/* Zoho Card */}
                   <div className="bg-gray-800/50 rounded-lg p-6 border border-gray-700">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="font-semibold text-gray-100">Zoho</h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold text-gray-100">
+                          Zoho Projects
+                        </h3>
+                        {connectorAddedType !== "zoho" && (
+                          <span className="text-xs bg-orange-500/20 text-orange-300 px-2 py-1 rounded">
+                            Optional
+                          </span>
+                        )}
+                      </div>
                       {connectorAddedType === "zoho" && (
                         <span className="text-green-400 text-lg">✓</span>
                       )}
@@ -726,6 +745,9 @@ export default function OnboardingPage() {
 
                     {connectorAddedType !== "zoho" ? (
                       <div className="space-y-3">
+                        <div className="text-xs text-gray-400 bg-orange-900/20 border border-orange-800/20 p-2 rounded mb-2">
+                          Get token from Zoho Projects → Settings → API Token
+                        </div>
                         <input
                           type="password"
                           value={zohoToken}
@@ -775,19 +797,19 @@ export default function OnboardingPage() {
                 </div>
 
                 <div className="flex flex-col gap-3">
-                  <Button
-                    onClick={handleComplete}
-                    disabled={connectors.length === 0}
-                    className="w-full"
-                  >
-                    Continue to SnapFlow
+                  <Button onClick={handleComplete} className="w-full">
+                    {connectors.length > 0
+                      ? "Continue to SnapFlow"
+                      : "Continue Without Connectors"}
                   </Button>
-                  <button
-                    onClick={handleSkipConnectors}
-                    className="text-sm text-gray-400 hover:text-gray-300"
-                  >
-                    Skip for now – set up later
-                  </button>
+                  {connectors.length > 0 && (
+                    <button
+                      onClick={() => setStep(4)}
+                      className="text-sm text-gray-400 hover:text-gray-300"
+                    >
+                      Add another connector
+                    </button>
+                  )}
                 </div>
               </div>
             )}

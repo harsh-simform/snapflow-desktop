@@ -13,30 +13,45 @@ function MyApp({ Component, pageProps }: AppProps) {
   useEffect(() => {
     // Setup OAuth callback listener
     const unsubscribe = window.api.onNavigate((route: string) => {
+      console.log("[App] Received navigate event:", route);
+      console.log("[App] Current pathname:", router.pathname);
       router.push(route);
     });
 
+    console.log("[App] onNavigate listener set up");
     return () => {
       unsubscribe();
     };
-  }, [router]);
+  }, []);
 
   useEffect(() => {
     const checkAuth = async () => {
       const publicRoutes = ["/auth", "/500"];
 
-      // Skip auth checks for public routes
-      if (publicRoutes.includes(router.pathname)) {
-        setAuthChecked(true);
-        return;
-      }
-
       try {
         // Check if user is authenticated
         const userResult = await window.api.getUser();
+        const isAuthenticated = userResult.success && userResult.data;
 
-        if (!userResult.success || !userResult.data) {
-          // Not authenticated, redirect to auth
+        // If user IS authenticated but on auth page, redirect to home/onboarding
+        if (isAuthenticated && router.pathname === "/auth") {
+          const onboardingResult = await window.api.getOnboardingStatus();
+          if (onboardingResult.success && !onboardingResult.data?.isComplete) {
+            router.push("/onboarding");
+          } else {
+            router.push("/home");
+          }
+          return;
+        }
+
+        // Skip further auth checks for public routes
+        if (publicRoutes.includes(router.pathname)) {
+          setAuthChecked(true);
+          return;
+        }
+
+        // User is NOT authenticated on protected route, redirect to auth
+        if (!isAuthenticated) {
           router.push("/auth");
           return;
         }

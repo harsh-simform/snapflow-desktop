@@ -120,10 +120,11 @@ class SessionManager {
 
       if (user) {
         await this.applyUser(user);
+        // TODO: Re-enable cloud sync after refactoring for workspace-scoped architecture
         // Background cloud sync — non-blocking, best-effort
-        this.syncFromCloudOnLogin(user.id).catch((err) =>
-          log.warn("[Session] Background sync failed:", err)
-        );
+        // this.syncFromCloudOnLogin(user.id).catch((err) =>
+        //   log.warn("[Session] Background sync failed:", err)
+        // );
       } else {
         log.warn("[Session] Could not resolve user — clearing session");
         await this.clearUser();
@@ -160,17 +161,41 @@ class SessionManager {
           break;
 
         case "SIGNED_IN":
+          log.info("[Session] SIGNED_IN: session exists:", !!session);
           if (session) {
-            // Handles OAuth / magic-link flows where SIGNED_IN fires without
-            // an explicit setUser call from the UI.
-            const user = await authService.getCurrentUser();
-            if (user && user.id !== this.currentUser?.id) {
-              log.info(
-                "[Session] SIGNED_IN event — applying user:",
-                user.email
-              );
-              await this.applyUser(user);
+            // Extract user from session object to avoid extra network call.
+            // The session contains the authenticated user data.
+            // This is the expected flow for OAuth callbacks where setSession
+            // already has the user info embedded in the JWT.
+            if (session.user) {
+              const user = {
+                id: session.user.id,
+                name:
+                  session.user.user_metadata?.name ??
+                  session.user.email?.split("@")[0] ??
+                  "User",
+                email: session.user.email!,
+                createdAt: new Date(session.user.created_at),
+                updatedAt: new Date(
+                  session.user.updated_at ?? session.user.created_at
+                ),
+              };
+
+              if (user.id !== this.currentUser?.id) {
+                log.info(
+                  "[Session] SIGNED_IN: Applying user from session:",
+                  user.email
+                );
+                await this.applyUser(user);
+                log.info("[Session] SIGNED_IN: User applied successfully");
+              } else {
+                log.info("[Session] SIGNED_IN: User already set, skipping");
+              }
+            } else {
+              log.warn("[Session] SIGNED_IN: No user in session");
             }
+          } else {
+            log.warn("[Session] SIGNED_IN: No session provided");
           }
           break;
 
@@ -196,8 +221,9 @@ class SessionManager {
     await this.applyUser(user);
     this.attachAuthListener();
 
+    // TODO: Re-enable cloud sync after refactoring for workspace-scoped architecture
     // Sync from cloud after explicit login
-    await this.syncFromCloudOnLogin(user.id);
+    // await this.syncFromCloudOnLogin(user.id);
   }
 
   getUser(): AuthUser | null {

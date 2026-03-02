@@ -5,15 +5,15 @@ import { Button } from "../ui/Button";
 interface ConnectorForm {
   id: string;
   accessToken: string;
-  owner: string;
-  repo: string;
+  portalId: string;
+  projectId: string;
   name: string;
   validating: boolean;
   validationStatus: "idle" | "validating" | "success" | "error";
   validationMessage: string;
 }
 
-export function GitHubConnectorManager() {
+export function ZohoConnectorManager() {
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [loading, setLoading] = useState(true);
   const [forms, setForms] = useState<ConnectorForm[]>([]);
@@ -25,8 +25,8 @@ export function GitHubConnectorManager() {
       {
         id: Date.now().toString(),
         accessToken: "",
-        owner: "",
-        repo: "",
+        portalId: "",
+        projectId: "",
         name: "",
         validating: false,
         validationStatus: "idle",
@@ -81,10 +81,10 @@ export function GitHubConnectorManager() {
     try {
       const result = await window.api.listConnectors(workspaceId);
       if (result.success) {
-        const githubConnectors = (result.data || []).filter(
-          (c: Connector) => c.type === "github"
+        const zohoConnectors = (result.data || []).filter(
+          (c: Connector) => c.type === "zoho"
         );
-        setConnectors(githubConnectors);
+        setConnectors(zohoConnectors);
       }
     } catch (error) {
       console.error("Failed to load connectors:", error);
@@ -93,22 +93,21 @@ export function GitHubConnectorManager() {
     }
   };
 
-  const handleAddGitHub = async (formId: string) => {
+  const handleAddZoho = async (formId: string) => {
     const formData = forms.find((f) => f.id === formId);
     if (!formData) return;
 
     updateForm(formId, {
       validating: true,
       validationStatus: "validating",
-      validationMessage: "Validating repository access...",
+      validationMessage: "Validating Zoho credentials...",
     });
 
     try {
       // Validate the connector first
-      const validationResult = await window.api.validateGitHubConnector(
+      const validationResult = await window.api.validateZohoConnector(
         formData.accessToken,
-        formData.owner,
-        formData.repo
+        formData.portalId
       );
 
       if (!validationResult.success || !validationResult.data.isValid) {
@@ -116,7 +115,7 @@ export function GitHubConnectorManager() {
           validating: false,
           validationStatus: "error",
           validationMessage:
-            "Repository validation failed. Please check your access token and repository details.",
+            "Zoho validation failed. Please check your access token and portal ID.",
         });
         return;
       }
@@ -124,25 +123,28 @@ export function GitHubConnectorManager() {
       updateForm(formId, {
         validationStatus: "success",
         validationMessage:
-          "Repository validated successfully! Adding connector...",
+          "Credentials validated successfully! Adding connector...",
       });
 
       // Add the connector
       const result = await window.api.addConnector(workspaceId, {
-        name: formData.name || `${formData.owner}/${formData.repo}`,
-        type: "github",
+        name: formData.name || "Zoho Projects",
+        type: "zoho",
         enabled: true,
         config: {
           accessToken: formData.accessToken,
-          owner: formData.owner,
-          repo: formData.repo,
+          portalId: formData.portalId,
+          projectId: formData.projectId,
+          refreshToken: "", // Will be obtained from Zoho OAuth
+          clientId: "", // Will be configured server-side
+          clientSecret: "", // Will be configured server-side
         },
       });
 
       if (result.success) {
         updateForm(formId, {
           validationStatus: "success",
-          validationMessage: "Repository connected successfully!",
+          validationMessage: "Zoho Projects connected successfully!",
         });
         setTimeout(() => {
           removeForm(formId);
@@ -152,7 +154,7 @@ export function GitHubConnectorManager() {
         updateForm(formId, {
           validating: false,
           validationStatus: "error",
-          validationMessage: `Failed to connect repository: ${result.error}`,
+          validationMessage: `Failed to connect Zoho: ${result.error}`,
         });
       }
     } catch {
@@ -178,7 +180,7 @@ export function GitHubConnectorManager() {
 
   const handleDeleteConnector = async (id: string, name: string) => {
     const confirmed = confirm(
-      `🗑️ Remove "${name}"?\n\nThis will disconnect the repository. You can always reconnect it later.`
+      `🗑️ Remove "${name}"?\n\nThis will disconnect Zoho. You can always reconnect it later.`
     );
     if (!confirmed) return;
 
@@ -199,9 +201,9 @@ export function GitHubConnectorManager() {
       <div className="flex items-center justify-center py-16">
         <div className="flex flex-col items-center space-y-4">
           <div className="relative">
-            <div className="w-10 h-10 border-3 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
+            <div className="w-10 h-10 border-3 border-orange-500/20 border-t-orange-500 rounded-full animate-spin"></div>
             <div
-              className="absolute inset-0 w-10 h-10 border-3 border-transparent border-t-blue-400/40 rounded-full animate-spin"
+              className="absolute inset-0 w-10 h-10 border-3 border-transparent border-t-orange-400/40 rounded-full animate-spin"
               style={{
                 animationDuration: "1.5s",
                 animationDirection: "reverse",
@@ -209,7 +211,7 @@ export function GitHubConnectorManager() {
             ></div>
           </div>
           <span className="text-gray-300 font-medium">
-            Loading repositories...
+            Loading Zoho connectors...
           </span>
         </div>
       </div>
@@ -218,7 +220,7 @@ export function GitHubConnectorManager() {
 
   return (
     <div className="space-y-6">
-      {/* Connected Repositories */}
+      {/* Connected Zoho Projects */}
       {connectors.map((connector) => (
         <div
           key={connector.id}
@@ -226,13 +228,13 @@ export function GitHubConnectorManager() {
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4 flex-1">
-              <div className="w-12 h-12 bg-gradient-to-br from-gray-700/50 to-gray-800/50 border border-gray-600/50 rounded-xl flex items-center justify-center group-hover:border-gray-500/50 transition-all duration-300">
+              <div className="w-12 h-12 bg-gradient-to-br from-orange-600/30 to-orange-700/20 border border-orange-600/50 rounded-xl flex items-center justify-center group-hover:border-orange-500/50 transition-all duration-300">
                 <svg
-                  className="w-6 h-6 text-gray-400 group-hover:text-gray-300"
+                  className="w-6 h-6 text-orange-400 group-hover:text-orange-300"
                   fill="currentColor"
                   viewBox="0 0 24 24"
                 >
-                  <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z" />
                 </svg>
               </div>
 
@@ -241,8 +243,7 @@ export function GitHubConnectorManager() {
                   {connector.name}
                 </h3>
                 <p className="text-sm text-gray-400 group-hover:text-gray-300 transition-colors font-mono truncate">
-                  {(connector.config as any).owner}/
-                  {(connector.config as any).repo}
+                  Portal: {(connector.config as any).portalId}
                 </p>
               </div>
 
@@ -272,7 +273,7 @@ export function GitHubConnectorManager() {
                   }
                   className="sr-only peer"
                 />
-                <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 hover:bg-gray-500 peer-checked:hover:bg-blue-700 transition-colors"></div>
+                <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-orange-300/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-600 hover:bg-gray-500 peer-checked:hover:bg-orange-700 transition-colors"></div>
               </label>
 
               <Button
@@ -312,23 +313,23 @@ export function GitHubConnectorManager() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              handleAddGitHub(form.id);
+              handleAddZoho(form.id);
             }}
             className="space-y-6"
           >
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-blue-600/20 border border-blue-500/30 rounded-xl flex items-center justify-center">
+                <div className="w-10 h-10 bg-orange-600/20 border border-orange-500/30 rounded-xl flex items-center justify-center">
                   <svg
-                    className="w-5 h-5 text-blue-400"
+                    className="w-5 h-5 text-orange-400"
                     fill="currentColor"
                     viewBox="0 0 24 24"
                   >
-                    <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z" />
                   </svg>
                 </div>
                 <h3 className="text-lg font-semibold text-gray-100">
-                  Connect GitHub Repository
+                  Connect Zoho Projects
                 </h3>
               </div>
               {forms.length > 1 && (
@@ -372,15 +373,14 @@ export function GitHubConnectorManager() {
                     onChange={(e) =>
                       updateForm(form.id, { name: e.target.value })
                     }
-                    className="w-full px-4 py-3 bg-gray-900/60 border border-gray-700/50 text-gray-100 rounded-xl focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 outline-none transition-all duration-200"
-                    placeholder="My Awesome Project"
+                    className="w-full px-4 py-3 bg-gray-900/60 border border-gray-700/50 text-gray-100 rounded-xl focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50 outline-none transition-all duration-200"
+                    placeholder="My Zoho Workspace"
                   />
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-100 mb-2">
-                    Personal Access Token{" "}
-                    <span className="text-red-400">*</span>
+                    Access Token <span className="text-red-400">*</span>
                   </label>
                   <input
                     type="password"
@@ -389,54 +389,50 @@ export function GitHubConnectorManager() {
                     onChange={(e) =>
                       updateForm(form.id, { accessToken: e.target.value })
                     }
-                    className="w-full px-4 py-3 bg-gray-900/60 border border-gray-700/50 text-gray-100 rounded-xl focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 outline-none transition-all duration-200 font-mono"
-                    placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                    className="w-full px-4 py-3 bg-gray-900/60 border border-gray-700/50 text-gray-100 rounded-xl focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50 outline-none transition-all duration-200 font-mono"
+                    placeholder="Your Zoho API token"
                   />
                 </div>
               </div>
 
               {/* Help text for token */}
-              <div className="p-3 bg-blue-900/10 border border-blue-800/20 rounded-lg -mt-2">
-                <p className="text-xs text-blue-300/80">
-                  💡 Need a token? Go to GitHub Settings → Developer settings →
-                  Personal access tokens → Generate new token (classic) with{" "}
-                  <code className="bg-blue-800/30 px-1.5 py-0.5 rounded text-blue-300 font-mono">
-                    repo
-                  </code>{" "}
-                  scope
+              <div className="p-3 bg-orange-900/10 border border-orange-800/20 rounded-lg -mt-2">
+                <p className="text-xs text-orange-300/80">
+                  💡 Get your access token from Zoho Projects → Settings →
+                  Developer → API Token
                 </p>
               </div>
 
-              {/* Owner and Repository */}
+              {/* Portal ID and Project ID */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-100 mb-2">
-                    Owner <span className="text-red-400">*</span>
+                    Portal ID <span className="text-red-400">*</span>
                   </label>
                   <input
                     type="text"
                     required
-                    value={form.owner}
+                    value={form.portalId}
                     onChange={(e) =>
-                      updateForm(form.id, { owner: e.target.value })
+                      updateForm(form.id, { portalId: e.target.value })
                     }
-                    className="w-full px-4 py-3 bg-gray-900/60 border border-gray-700/50 text-gray-100 rounded-xl focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 outline-none transition-all duration-200"
-                    placeholder="octocat"
+                    className="w-full px-4 py-3 bg-gray-900/60 border border-gray-700/50 text-gray-100 rounded-xl focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50 outline-none transition-all duration-200"
+                    placeholder="Your portal ID"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-100 mb-2">
-                    Repository <span className="text-red-400">*</span>
+                    Project ID <span className="text-red-400">*</span>
                   </label>
                   <input
                     type="text"
                     required
-                    value={form.repo}
+                    value={form.projectId}
                     onChange={(e) =>
-                      updateForm(form.id, { repo: e.target.value })
+                      updateForm(form.id, { projectId: e.target.value })
                     }
-                    className="w-full px-4 py-3 bg-gray-900/60 border border-gray-700/50 text-gray-100 rounded-xl focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 outline-none transition-all duration-200"
-                    placeholder="hello-world"
+                    className="w-full px-4 py-3 bg-gray-900/60 border border-gray-700/50 text-gray-100 rounded-xl focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50 outline-none transition-all duration-200"
+                    placeholder="Your project ID"
                   />
                 </div>
               </div>
@@ -449,13 +445,13 @@ export function GitHubConnectorManager() {
                       ? "bg-green-900/20 border-green-800/30"
                       : form.validationStatus === "error"
                         ? "bg-red-900/20 border-red-800/30"
-                        : "bg-blue-900/20 border-blue-800/30"
+                        : "bg-orange-900/20 border-orange-800/30"
                   }`}
                 >
                   <div className="flex items-center space-x-3">
                     {form.validationStatus === "validating" && (
                       <svg
-                        className="w-5 h-5 text-blue-400 animate-spin"
+                        className="w-5 h-5 text-orange-400 animate-spin"
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
@@ -504,7 +500,7 @@ export function GitHubConnectorManager() {
                           ? "text-green-300"
                           : form.validationStatus === "error"
                             ? "text-red-300"
-                            : "text-blue-300"
+                            : "text-orange-300"
                       }`}
                     >
                       {form.validationMessage}
@@ -522,8 +518,8 @@ export function GitHubConnectorManager() {
                   disabled={
                     form.validating ||
                     !form.accessToken ||
-                    !form.owner ||
-                    !form.repo
+                    !form.portalId ||
+                    !form.projectId
                   }
                   isLoading={form.validating}
                   leftIcon={
@@ -546,8 +542,8 @@ export function GitHubConnectorManager() {
                   className="px-8"
                 >
                   {form.validating
-                    ? "Connecting Repository..."
-                    : "Connect Repository"}
+                    ? "Connecting Zoho..."
+                    : "Connect Zoho Projects"}
                 </Button>
               </div>
             </div>
@@ -562,7 +558,7 @@ export function GitHubConnectorManager() {
             variant="outline"
             size="md"
             onClick={addNewForm}
-            className="w-full border-2 border-dashed hover:border-blue-500/50 hover:bg-blue-500/5"
+            className="w-full border-2 border-dashed hover:border-orange-500/50 hover:bg-orange-500/5"
             leftIcon={
               <svg
                 className="w-5 h-5"
@@ -579,7 +575,7 @@ export function GitHubConnectorManager() {
               </svg>
             }
           >
-            Add GitHub Repository (1/1)
+            Add Zoho Projects (1/1)
           </Button>
         </div>
       )}

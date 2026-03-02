@@ -1242,6 +1242,11 @@ async function handleCheckForUpdates() {
 
 /**
  * Handle OAuth callback deep link (snapflow://auth/callback)
+ *
+ * Strategy: Just set the session and let the auth listener handle user setup.
+ * The auth listener (sessionManager.attachAuthListener) will fire on SIGNED_IN
+ * and call sessionManager.setUser() which handles all the business logic.
+ * We just need to ensure navigation happens after the user is set.
  */
 const handleOAuthCallback = async (url: string) => {
   log.info("[OAuth] Handling callback URL:", url);
@@ -1262,6 +1267,7 @@ const handleOAuthCallback = async (url: string) => {
         return;
       }
       log.info("[OAuth] Session exchanged successfully");
+      // PKCE flow is handled by Supabase and will trigger auth listener
     } else {
       // Implicit flow — extract tokens from hash fragment
       const hashFragment = url.substring(url.indexOf("#") + 1);
@@ -1275,30 +1281,58 @@ const handleOAuthCallback = async (url: string) => {
       }
 
       log.info("[OAuth] Implicit flow detected, setting session from tokens");
-      await authService.setSession(accessToken, refreshToken);
-      log.info("[OAuth] Session set successfully");
+      try {
+        // Set session - this returns both session and user object
+        log.info("[OAuth] Calling setSession...");
+        const result = await authService.setSession(accessToken, refreshToken);
+        log.info(
+          "[OAuth] setSession returned, session exists:",
+          !!result.session
+        );
+        if (result.user) {
+          log.info(
+            "[OAuth] Applying user directly from setSession:",
+            result.user.email
+          );
+          await sessionManager.setUser(result.user);
+          log.info(
+            "[OAuth] User applied successfully, skipping auth listener wait"
+          );
+        }
+      } catch (setSessionError) {
+        log.error("[OAuth] Error in setSession:", setSessionError);
+        throw setSessionError;
+      }
     }
 
-    // Get current user
-    const user = await authService.getCurrentUser();
-    if (!user) {
-      log.error("[OAuth] Failed to get current user after OAuth");
-      return;
+    // User is now set via setSession (implicit flow) or auth listener (PKCE flow)
+
+    // Navigate to onboarding
+    log.info("[OAuth] Attempting to send navigate event...");
+    log.info("[OAuth] mainWindow exists:", !!mainWindow);
+    if (mainWindow) {
+      log.info("[OAuth] mainWindow destroyed:", mainWindow.isDestroyed());
+      log.info(
+        "[OAuth] mainWindow.webContents exists:",
+        !!mainWindow.webContents
+      );
     }
 
-    log.info("[OAuth] User authenticated:", user.email);
-
-    // Set user in session manager
-    await sessionManager.setUser(user);
-
-    // Navigate to onboarding check
-    if (mainWindow?.webContents) {
-      mainWindow.webContents.send("navigate", "/onboarding");
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+      try {
+        log.info("[OAuth] Sending navigate event to renderer: /onboarding");
+        mainWindow.webContents.send("navigate", "/onboarding");
+        log.info("[OAuth] Navigate event sent successfully ✓");
+      } catch (sendError) {
+        log.error("[OAuth] Error sending navigate event:", sendError);
+      }
+    } else {
+      log.warn("[OAuth] Cannot send navigate event - mainWindow not available");
     }
 
-    log.info("[OAuth] ✓ OAuth callback handled successfully");
+    log.info("[OAuth] ✓ OAuth callback handled");
   } catch (error) {
-    log.error("[OAuth] Error handling OAuth callback:", error);
+    log.error("[OAuth] Unexpected error handling OAuth callback:", error);
   }
 };
 
@@ -1789,7 +1823,8 @@ function setupIPCHandlers() {
       const hasTenant = !!tenant;
       const hasWorkspace = !!workspace;
       const hasConnector = connectors.length > 0;
-      const isComplete = hasTenant && hasWorkspace && hasConnector;
+      // Onboarding is complete after creating tenant + workspace (connectors optional)
+      const isComplete = hasTenant && hasWorkspace;
 
       let currentStep = 1;
       if (hasTenant && !hasWorkspace) {

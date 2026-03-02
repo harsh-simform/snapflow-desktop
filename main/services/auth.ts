@@ -197,6 +197,7 @@ class AuthService {
   /**
    * Explicitly restores a session from stored tokens.
    * The SDK will attempt a network refresh if the access token is expired.
+   * Returns both the session and the user object for efficient OAuth flows.
    */
   async setSession(accessToken: string, refreshToken: string) {
     const supabase = requireSupabase();
@@ -207,7 +208,9 @@ class AuthService {
     });
     if (error) throw new Error(error.message);
 
-    return data.session;
+    // Extract user from session to avoid subsequent network calls
+    const user = data.session?.user ? mapUser(data.session.user) : null;
+    return { session: data.session, user };
   }
 
   /** Returns true when there is an active Supabase session (no network call). */

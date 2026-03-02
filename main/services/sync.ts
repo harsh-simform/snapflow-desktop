@@ -14,7 +14,7 @@ interface SyncResult {
 
 interface SyncHistory {
   id: string;
-  user_id: string;
+  initiated_by: string;
   sync_type: "push" | "pull" | "full";
   status: "in_progress" | "completed" | "failed";
   synced_count: number;
@@ -101,7 +101,7 @@ export class SyncService {
       const { data, error } = await supabase
         .from("sync_history")
         .insert({
-          user_id: userId,
+          initiated_by: userId,
           sync_type: syncType,
           status: "in_progress",
           synced_count: 0,
@@ -177,7 +177,7 @@ export class SyncService {
       const { data, error } = await supabase
         .from("sync_history")
         .select("*")
-        .eq("user_id", userId)
+        .eq("initiated_by", userId)
         .order("started_at", { ascending: false })
         .limit(1)
         .single();
@@ -462,12 +462,12 @@ export class SyncService {
             .from("issues")
             .select("id, cloud_file_url, cloud_thumbnail_url")
             .eq("id", issue.id)
-            .eq("user_id", userId)
+            .eq("created_by", userId)
             .single();
 
           const issueData = {
             id: issue.id,
-            user_id: userId,
+            created_by: userId,
             title: issue.title,
             description: issue.description || null,
             type: issue.type,
@@ -498,7 +498,7 @@ export class SyncService {
               .from("issues")
               .update(issueData)
               .eq("id", issue.id)
-              .eq("user_id", userId);
+              .eq("created_by", userId);
 
             if (error) {
               log.error(
@@ -610,7 +610,7 @@ export class SyncService {
       const { data: cloudIssues, error } = await supabase
         .from("issues")
         .select("*")
-        .eq("user_id", userId)
+        .eq("created_by", userId)
         .order("timestamp", { ascending: false });
 
       if (error) {
@@ -722,7 +722,7 @@ export class SyncService {
             cloudThumbnailUrl: cloudIssue.cloud_thumbnail_url,
             syncStatus: "synced" as const,
             syncedTo: cloudIssue.synced_to || [],
-            userId: cloudIssue.user_id,
+            userId: cloudIssue.created_by,
             tags: cloudIssue.tags || [],
           };
 
