@@ -309,22 +309,7 @@ export default function SettingsPage() {
 
           {/* Tab Content */}
           <div className="space-y-6">
-            {activeTab === "account" && (
-              <>
-                {/* Account Header */}
-                <div className="mb-6">
-                  <h2 className="text-xl font-semibold text-gray-100 mb-2">
-                    Account Settings
-                  </h2>
-                  <p className="text-sm text-gray-400">
-                    Manage your personal information and account details
-                  </p>
-                </div>
-
-                {/* Account Section */}
-                <AccountSection />
-              </>
-            )}
+            {activeTab === "account" && <AccountSection />}
 
             {activeTab === "connectors" && (
               <>

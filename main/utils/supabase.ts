@@ -249,4 +249,35 @@ export function getSupabase(): SupabaseClient | null {
   return client;
 }
 
+/**
+ * Returns a Supabase client initialised with the service-role key.
+ * This bypasses Row-Level Security and grants access to auth.admin APIs
+ * (e.g. inviteUserByEmail).  Only use in the main process — never expose
+ * to the renderer.
+ *
+ * Returns null if SUPABASE_SERVICE_ROLE_KEY is not set.
+ */
+export function getSupabaseAdmin(): SupabaseClient | null {
+  const supabaseUrl = process.env.SUPABASE_URL ?? "";
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    log.warn(
+      "[Supabase] ⚠️  SUPABASE_SERVICE_ROLE_KEY not set — " +
+        "admin operations (e.g. invite emails) will be unavailable."
+    );
+    return null;
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+    global: {
+      fetch: buildFetchWithTimeout(10_000),
+    },
+  });
+}
+
 export type { SupabaseClient };

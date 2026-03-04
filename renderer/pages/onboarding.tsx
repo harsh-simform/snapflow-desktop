@@ -36,7 +36,7 @@ export default function OnboardingPage() {
   >([]);
   const [_newInviteEmail, _setNewInviteEmail] = useState("");
   const [_newInviteRole, _setNewInviteRole] = useState<UserRole>("dev");
-  const [invitesSending, setInvitesSending] = useState(false);
+  const [_invitesSending, _setInvitesSending] = useState(false);
 
   // Step 3: Workspace form
   const [workspaceName, setWorkspaceName] = useState("");
@@ -56,12 +56,14 @@ export default function OnboardingPage() {
     name?: string;
     avatar_url?: string;
   }
-  const [githubOAuthStage, setGitHubOAuthStage] = useState<GitHubOAuthStage>("idle");
-  const [githubUser, setGitHubUser] = useState<GitHubUser | null>(null);
+  const [githubOAuthStage, setGitHubOAuthStage] =
+    useState<GitHubOAuthStage>("idle");
+  const [_githubUser, setGitHubUser] = useState<GitHubUser | null>(null);
   const [githubRepos, setGitHubRepos] = useState<GitHubRepo[]>([]);
   const [githubSelectedRepoId, setGitHubSelectedRepoId] = useState(0);
-  const [githubSelectedRepoName, setGitHubSelectedRepoName] = useState("");
-  const [githubSelectedRepoFullName, setGitHubSelectedRepoFullName] = useState("");
+  const [_githubSelectedRepoName, setGitHubSelectedRepoName] = useState("");
+  const [githubSelectedRepoFullName, setGitHubSelectedRepoFullName] =
+    useState("");
   const [githubConnectorName, setGitHubConnectorName] = useState("");
   const [githubOAuthError, setGitHubOAuthError] = useState("");
 
@@ -224,7 +226,8 @@ export default function OnboardingPage() {
       const newTenant = result.data as Tenant;
       setTenant(newTenant);
       toast.success("Organization created successfully!");
-      await updateStep(2);
+      // Step 2 (invite team) is temporarily disabled — skip directly to workspace creation
+      await updateStep(3);
     } catch (err) {
       console.error("Error creating tenant:", err);
       setError("Failed to create organization");
@@ -234,7 +237,7 @@ export default function OnboardingPage() {
   }
 
   // Handle adding invite row
-  function handleAddInvite() {
+  function _handleAddInvite() {
     setInvites([
       ...invites,
       { id: Date.now().toString(), email: "", role: "dev" },
@@ -242,12 +245,12 @@ export default function OnboardingPage() {
   }
 
   // Handle removing invite row
-  function handleRemoveInvite(id: string) {
+  function _handleRemoveInvite(id: string) {
     setInvites(invites.filter((inv) => inv.id !== id));
   }
 
   // Handle sending invites
-  async function handleSendInvites() {
+  async function _handleSendInvites() {
     if (invites.length === 0) {
       await updateStep(3);
       return;
@@ -260,7 +263,7 @@ export default function OnboardingPage() {
       return;
     }
 
-    setInvitesSending(true);
+    _setInvitesSending(true);
     setError("");
 
     let successCount = 0;
@@ -285,7 +288,7 @@ export default function OnboardingPage() {
       }
     }
 
-    setInvitesSending(false);
+    _setInvitesSending(false);
 
     if (failureCount > 0) {
       toast.warning(`Sent ${successCount} invites, ${failureCount} failed`);
@@ -357,7 +360,11 @@ export default function OnboardingPage() {
   }
 
   // Handle GitHub repository selection
-  function handleGitHubRepoSelect(repoId: number, repoName: string, repoFullName: string) {
+  function handleGitHubRepoSelect(
+    repoId: number,
+    repoName: string,
+    repoFullName: string
+  ) {
     console.log("[Onboarding] Repo selected:", repoId, repoFullName);
     setGitHubSelectedRepoId(repoId);
     setGitHubSelectedRepoName(repoName);
@@ -398,10 +405,7 @@ export default function OnboardingPage() {
   }
 
   // Handle Zoho portal selection
-  async function handleZohoPortalSelect(
-    portalId: string,
-    portalName: string
-  ) {
+  async function handleZohoPortalSelect(portalId: string, portalName: string) {
     console.log("[Onboarding] Portal selected:", portalId, portalName);
     setZohoSelectedPortalId(portalId);
     setZohoSelectedPortalName(portalName);
@@ -461,7 +465,7 @@ export default function OnboardingPage() {
         if (tokenResult?.success && tokenResult?.accessToken) {
           accessToken = tokenResult.accessToken;
         }
-      } catch (tokenError) {
+      } catch (_tokenError) {
         // Continue anyway - the token will be applied from pendingGitHubTokens in the IPC handler
       }
 
@@ -521,7 +525,7 @@ export default function OnboardingPage() {
           refreshToken = tokenResult.refreshToken || "";
           apiDomain = tokenResult.apiDomain || "";
         }
-      } catch (tokenError) {
+      } catch (_tokenError) {
         // Continue anyway - the tokens will be applied from pendingZohoTokens in the IPC handler
       }
 
@@ -570,7 +574,7 @@ export default function OnboardingPage() {
   }
 
   // Handle skip connectors (go to home but incomplete)
-  async function handleSkipConnectors() {
+  async function _handleSkipConnectors() {
     // Can skip connectors for now
     toast.warning(
       "You can add connectors later in settings. Some features may be unavailable."
@@ -617,43 +621,53 @@ export default function OnboardingPage() {
               </p>
             </div>
 
-            {/* Step Indicator */}
+            {/* Step Indicator — step 2 (invite) is hidden, visible steps are 1,3,4,5 */}
             <div className="flex justify-between mb-8">
-              {[1, 2, 3, 4, 5].map((s) => (
-                <div key={s} className="flex flex-col items-center flex-1">
-                  <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold transition-all ${
-                      s <= step
-                        ? "bg-blue-600 text-white"
-                        : "bg-gray-800 text-gray-500"
-                    }`}
-                  >
-                    {s < step ? "✓" : s}
+              {[1, 3, 4, 5].map((s, idx) => {
+                // Map visible index (1-based) to display number
+                const displayNum = idx + 1;
+                // A visible step is "done" if the actual step has passed it
+                const isDone = step > s;
+                const isActive = step === s || (s === 3 && step === 2);
+                const label =
+                  s === 1
+                    ? "Org"
+                    : s === 3
+                      ? "Workspace"
+                      : s === 4
+                        ? "Connectors"
+                        : "Done";
+                return (
+                  <div key={s} className="flex flex-col items-center flex-1">
+                    <div
+                      className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold transition-all ${
+                        isDone || isActive
+                          ? "bg-blue-600 text-white"
+                          : "bg-gray-800 text-gray-500"
+                      }`}
+                    >
+                      {isDone ? "✓" : displayNum}
+                    </div>
+                    <div
+                      className={`text-xs mt-2 ${
+                        isDone || isActive ? "text-gray-300" : "text-gray-600"
+                      }`}
+                    >
+                      {label}
+                    </div>
                   </div>
-                  <div
-                    className={`text-xs mt-2 ${
-                      s <= step ? "text-gray-300" : "text-gray-600"
-                    }`}
-                  >
-                    {s === 1
-                      ? "Org"
-                      : s === 2
-                        ? "Team"
-                        : s === 3
-                          ? "Workspace"
-                          : s === 4
-                            ? "Connectors"
-                            : "Done"}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
-            {/* Navigation Header */}
+            {/* Navigation Header — step 2 is skipped */}
             {step !== 5 && (
               <div className="flex justify-between items-center mb-8">
                 <Button
-                  onClick={() => updateStep(Math.max(1, step - 1))}
+                  onClick={() => {
+                    const prev = step - 1 === 2 ? 1 : Math.max(1, step - 1);
+                    updateStep(prev);
+                  }}
                   variant="outline"
                   size="sm"
                   disabled={step === 1}
@@ -661,10 +675,14 @@ export default function OnboardingPage() {
                   ← Back
                 </Button>
                 <span className="text-sm text-gray-400">
-                  Step {step} of 4
+                  Step {step === 1 ? 1 : step === 3 ? 2 : step === 4 ? 3 : step}{" "}
+                  of 4
                 </span>
                 <Button
-                  onClick={() => updateStep(Math.min(4, step + 1))}
+                  onClick={() => {
+                    const next = step + 1 === 2 ? 3 : Math.min(4, step + 1);
+                    updateStep(next);
+                  }}
                   variant="outline"
                   size="sm"
                   disabled={step === 4}
@@ -722,86 +740,7 @@ export default function OnboardingPage() {
               </div>
             )}
 
-            {/* Step 2: Invite Team */}
-            {step === 2 && (
-              <div className="bg-gray-900 rounded-xl p-8 border border-gray-800">
-                <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-2xl font-bold text-gray-100">
-                    Invite Your Team
-                  </h2>
-                  <button
-                    onClick={() => updateStep(3)}
-                    className="text-sm text-blue-400 hover:text-blue-300"
-                  >
-                    Skip for now
-                  </button>
-                </div>
-
-                <div className="space-y-4 mb-6">
-                  {invites.map((invite) => (
-                    <div key={invite.id} className="flex gap-3 items-end">
-                      <input
-                        type="email"
-                        value={invite.email}
-                        onChange={(e) => {
-                          setInvites(
-                            invites.map((inv) =>
-                              inv.id === invite.id
-                                ? { ...inv, email: e.target.value }
-                                : inv
-                            )
-                          );
-                        }}
-                        placeholder="user@example.com"
-                        className="flex-1 px-4 py-3 bg-gray-800 border border-gray-700 text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                      />
-                      <select
-                        value={invite.role}
-                        onChange={(e) => {
-                          setInvites(
-                            invites.map((inv) =>
-                              inv.id === invite.id
-                                ? { ...inv, role: e.target.value as UserRole }
-                                : inv
-                            )
-                          );
-                        }}
-                        className="px-3 py-3 bg-gray-800 border border-gray-700 text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                      >
-                        {["admin", "pm", "qa", "dev", "client"].map((role) => (
-                          <option key={role} value={role}>
-                            {role.toUpperCase()}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        onClick={() => handleRemoveInvite(invite.id)}
-                        className="px-3 py-3 text-red-400 hover:text-red-300"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="flex gap-3">
-                  <Button
-                    onClick={handleAddInvite}
-                    variant="secondary"
-                    className="flex-1"
-                  >
-                    + Add Email
-                  </Button>
-                  <Button
-                    onClick={handleSendInvites}
-                    disabled={invitesSending}
-                    className="flex-1"
-                  >
-                    {invitesSending ? "Sending..." : "Send Invites"}
-                  </Button>
-                </div>
-              </div>
-            )}
+            {/* Step 2: Invite Team — temporarily disabled */}
 
             {/* Step 3: Create Workspace */}
             {step === 3 && (
@@ -884,7 +823,8 @@ export default function OnboardingPage() {
                     ) : githubOAuthStage === "idle" ? (
                       <div className="space-y-3">
                         <p className="text-sm text-gray-400 mb-4">
-                          Sign in with your GitHub account to connect a repository.
+                          Sign in with your GitHub account to connect a
+                          repository.
                         </p>
                         <Button
                           onClick={handleGitHubSignIn}
@@ -915,7 +855,8 @@ export default function OnboardingPage() {
                           Cancel
                         </Button>
                       </div>
-                    ) : githubOAuthStage === "selecting" || githubOAuthStage === "saving" ? (
+                    ) : githubOAuthStage === "selecting" ||
+                      githubOAuthStage === "saving" ? (
                       <div className="space-y-3">
                         <div>
                           <label className="block text-xs font-medium text-gray-200 mb-1">
@@ -928,7 +869,11 @@ export default function OnboardingPage() {
                                 (r) => r.id === parseInt(e.target.value)
                               );
                               if (repo) {
-                                handleGitHubRepoSelect(repo.id, repo.name, repo.full_name);
+                                handleGitHubRepoSelect(
+                                  repo.id,
+                                  repo.name,
+                                  repo.full_name
+                                );
                               }
                             }}
                             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 text-gray-100 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
@@ -994,12 +939,14 @@ export default function OnboardingPage() {
 
                     {connectorAddedType === "zoho" ? (
                       <div className="text-green-400 text-sm">
-                        Connected: {zohoSelectedPortalName} / {zohoSelectedProjectName}
+                        Connected: {zohoSelectedPortalName} /{" "}
+                        {zohoSelectedProjectName}
                       </div>
                     ) : zohoOAuthStage === "idle" ? (
                       <div className="space-y-3">
                         <p className="text-sm text-gray-400 mb-4">
-                          Sign in with your Zoho account to connect your projects.
+                          Sign in with your Zoho account to connect your
+                          projects.
                         </p>
                         <Button
                           onClick={handleZohoSignIn}
@@ -1030,7 +977,8 @@ export default function OnboardingPage() {
                           Cancel
                         </Button>
                       </div>
-                    ) : zohoOAuthStage === "selecting" || zohoOAuthStage === "saving" ? (
+                    ) : zohoOAuthStage === "selecting" ||
+                      zohoOAuthStage === "saving" ? (
                       <div className="space-y-3">
                         <div>
                           <label className="block text-xs font-medium text-gray-200 mb-1">

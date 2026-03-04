@@ -120,17 +120,53 @@ class AuthService {
   // ── Lookup ───────────────────────────────────────────────────────────────────
 
   /**
-   * Look up a user by ID — requires admin key or service-role access.
-   * Falls back to null if permissions are insufficient.
+   * Look up a user by ID.
+   *
+   * Strategy (anon-key safe):
+   *  1. If the requested ID matches the currently-authenticated user, return
+   *     their live session data — zero extra queries.
+   *  2. Otherwise query the `user_profiles` table which is readable by any
+   *     authenticated user (populated by a DB trigger on auth.users).
+   *     This avoids using auth.admin.getUserById which requires the service-role key.
    */
   async getUserById(userId: string): Promise<AuthUser | null> {
     const supabase = getSupabase();
     if (!supabase) return null;
 
-    const { data, error } = await supabase.auth.admin.getUserById(userId);
-    if (error || !data.user) return null;
+    // Fast path: current user
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const sessionUser = sessionData?.session?.user;
+      if (sessionUser && sessionUser.id === userId) {
+        return mapUser(sessionUser);
+      }
+    } catch {
+      // ignore, fall through
+    }
 
-    return mapUser(data.user);
+    // Slow path: query public user_profiles table
+    try {
+      const { data, error } = await supabase
+        .from("user_profiles")
+        .select("id, name, email")
+        .eq("id", userId)
+        .single();
+
+      if (error || !data) return null;
+
+      return {
+        id: data.id as string,
+        name:
+          (data.name as string) ||
+          (data.email as string).split("@")[0] ||
+          "User",
+        email: data.email as string,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+    } catch {
+      return null;
+    }
   }
 
   /**

@@ -1,10 +1,12 @@
-import { getSupabase } from "../utils/supabase";
+import { getSupabase, getSupabaseAdmin } from "../utils/supabase";
 import log from "electron-log";
 import type {
   Workspace,
   WorkspaceMember,
+  WorkspaceMemberWithUser,
   UserRole,
 } from "../../renderer/types";
+import { authService } from "./auth";
 
 /**
  * Helper: Slugify a string
@@ -258,6 +260,145 @@ export class WorkspaceService {
   }
 
   /**
+   * List all members in a workspace with their user details (name, email)
+   */
+  async listMembersWithUsers(
+    workspaceId: string
+  ): Promise<WorkspaceMemberWithUser[]> {
+    log.info(
+      "[Workspace Service] Listing members with user details for workspace:",
+      workspaceId
+    );
+
+    const supabase = getSupabase();
+    if (!supabase) {
+      log.warn("[Workspace Service] Supabase not configured");
+      return [];
+    }
+
+    const { data, error } = await supabase
+      .from("workspace_members")
+      .select("id, workspace_id, user_id, role, joined_at")
+      .eq("workspace_id", workspaceId)
+      .order("joined_at", { ascending: true });
+
+    if (error) {
+      log.error(
+        "[Workspace Service] Error listing members with users:",
+        error.message
+      );
+      throw new Error(error.message);
+    }
+
+    // Resolve user details for each member via auth service
+    const members = await Promise.all(
+      (data || []).map(async (row) => {
+        let userName = "Unknown";
+        let userEmail = "";
+        try {
+          const authUser = await authService.getUserById(row.user_id as string);
+          if (authUser) {
+            userName = authUser.name;
+            userEmail = authUser.email;
+          }
+        } catch {
+          // silently fall back to defaults
+        }
+        return {
+          id: row.id as string,
+          workspaceId: row.workspace_id as string,
+          userId: row.user_id as string,
+          role: row.role as UserRole,
+          joinedAt: row.joined_at as string,
+          user: {
+            id: row.user_id as string,
+            name: userName,
+            email: userEmail,
+          },
+        } satisfies WorkspaceMemberWithUser;
+      })
+    );
+
+    return members;
+  }
+
+  /**
+   * Remove a member from a workspace
+   */
+  async removeMember(workspaceId: string, userId: string): Promise<void> {
+    log.info("[Workspace Service] Removing member from workspace");
+    log.info("[Workspace Service] Workspace ID:", workspaceId);
+    log.info("[Workspace Service] User ID:", userId);
+
+    const supabase = getSupabase();
+    if (!supabase) {
+      log.error("[Workspace Service] ✗ Supabase not configured");
+      throw new Error(
+        "Supabase is not configured. Please check your environment variables."
+      );
+    }
+
+    const { error } = await supabase
+      .from("workspace_members")
+      .delete()
+      .eq("workspace_id", workspaceId)
+      .eq("user_id", userId);
+
+    if (error) {
+      log.error("[Workspace Service] ✗ Error removing member:", error.message);
+      throw new Error(error.message);
+    }
+
+    log.info("[Workspace Service] ✓ Member removed successfully");
+  }
+
+  /**
+   * Update a member's role in a workspace
+   */
+  async updateMemberRole(
+    workspaceId: string,
+    userId: string,
+    role: UserRole
+  ): Promise<WorkspaceMember> {
+    log.info("[Workspace Service] Updating member role");
+    log.info("[Workspace Service] Workspace ID:", workspaceId);
+    log.info("[Workspace Service] User ID:", userId);
+    log.info("[Workspace Service] New role:", role);
+
+    const supabase = getSupabase();
+    if (!supabase) {
+      log.error("[Workspace Service] ✗ Supabase not configured");
+      throw new Error(
+        "Supabase is not configured. Please check your environment variables."
+      );
+    }
+
+    const { data, error } = await supabase
+      .from("workspace_members")
+      .update({ role })
+      .eq("workspace_id", workspaceId)
+      .eq("user_id", userId)
+      .select()
+      .single();
+
+    if (error) {
+      log.error(
+        "[Workspace Service] ✗ Error updating member role:",
+        error.message
+      );
+      throw new Error(error.message);
+    }
+
+    if (!data) {
+      throw new Error("Member not found");
+    }
+
+    const member = this.mapSupabaseWorkspaceMember(data);
+    log.info("[Workspace Service] ✓ Member role updated successfully");
+    return member;
+  }
+
+  /**
    * Invite a user by email to a workspace
    * Uses Supabase admin API if SUPABASE_SERVICE_ROLE_KEY is available
    * Falls back to OTP-based invite otherwise
@@ -280,39 +421,58 @@ export class WorkspaceService {
       );
     }
 
-    // Try admin invite first (requires service role)
-    try {
-      const { data, error } = await supabase.auth.admin.inviteUserByEmail(
-        email,
-        {
-          redirectTo: "snapflow://auth/callback",
-          data: {
-            invited_to_workspace: workspaceId,
-          },
-        }
-      );
+    // ── Path 1: admin client via service-role key ──────────────────────────
+    // auth.admin.inviteUserByEmail uses the "Invite user" email template
+    // configured in the Supabase dashboard (Authentication → Emails → Invite user).
+    // This requires SUPABASE_SERVICE_ROLE_KEY to be set in .env.
+    const adminClient = getSupabaseAdmin();
+    if (adminClient) {
+      try {
+        const { error } = await adminClient.auth.admin.inviteUserByEmail(
+          email,
+          {
+            redirectTo: "snapflow://auth/callback",
+            data: {
+              invited_to_workspace: workspaceId,
+              invited_role: role,
+            },
+          }
+        );
 
-      if (error) {
-        log.warn("[Workspace Service] Admin invite failed:", error.message);
-        // Fall through to OTP-based invite
-      } else if (data?.user?.id) {
-        log.info("[Workspace Service] ✓ Invite sent via admin API to:", email);
-        // User will need to accept the invite when they click the email link
-        return;
+        if (error) {
+          log.warn(
+            "[Workspace Service] Admin invite error, falling back to OTP:",
+            error.message
+          );
+          // fall through to OTP path below
+        } else {
+          log.info(
+            "[Workspace Service] ✓ Invite sent via admin API to:",
+            email
+          );
+          return;
+        }
+      } catch (err) {
+        log.warn(
+          "[Workspace Service] Admin invite threw, falling back to OTP:",
+          err
+        );
+        // fall through
       }
-    } catch (_err) {
-      log.warn(
-        "[Workspace Service] Admin API not available, falling back to OTP"
-      );
     }
 
-    // Fallback: OTP-based magic link
+    // ── Path 2: OTP / Magic Link fallback (no service-role key available) ──
+    // Uses the "Magic link" email template from the Supabase dashboard.
+    // shouldCreateUser: true creates the account if the email is new.
     try {
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
+          shouldCreateUser: true,
+          emailRedirectTo: "snapflow://auth/callback",
           data: {
             invited_to_workspace: workspaceId,
+            invited_role: role,
           },
         },
       });
@@ -359,14 +519,15 @@ export class WorkspaceService {
       .single();
 
     if (memberError || !memberData) {
-      log.error(
-        "[Workspace Service] ✗ User is not a member of this workspace"
-      );
+      log.error("[Workspace Service] ✗ User is not a member of this workspace");
       throw new Error("You are not a member of this workspace");
     }
 
     if (memberData.role !== "admin") {
-      log.error("[Workspace Service] ✗ User is not an admin. Role:", memberData.role);
+      log.error(
+        "[Workspace Service] ✗ User is not an admin. Role:",
+        memberData.role
+      );
       throw new Error("Only workspace admins can update workspace details");
     }
 
@@ -435,6 +596,106 @@ export class WorkspaceService {
     log.info("[Workspace Service] ✓ Workspace updated successfully");
     log.info("[Workspace Service] === UPDATE WORKSPACE END ===");
     return updatedWorkspace;
+  }
+
+  /**
+   * Delete a workspace (admin only)
+   */
+  async deleteWorkspace(workspaceId: string, userId: string): Promise<void> {
+    log.info("[Workspace Service] === DELETE WORKSPACE START ===");
+    log.info("[Workspace Service] Workspace ID:", workspaceId);
+    log.info("[Workspace Service] User ID:", userId);
+
+    const supabase = getSupabase();
+    if (!supabase) {
+      log.error("[Workspace Service] ✗ Supabase not configured");
+      throw new Error(
+        "Supabase is not configured. Please check your environment variables."
+      );
+    }
+
+    // Check if user is an admin in this workspace
+    const { data: memberData, error: memberError } = await supabase
+      .from("workspace_members")
+      .select("role")
+      .eq("workspace_id", workspaceId)
+      .eq("user_id", userId)
+      .single();
+
+    if (memberError || !memberData) {
+      throw new Error("You are not a member of this workspace");
+    }
+    if (memberData.role !== "admin") {
+      throw new Error("Only workspace admins can delete workspaces");
+    }
+
+    const { error } = await supabase
+      .from("workspaces")
+      .delete()
+      .eq("id", workspaceId);
+
+    if (error) {
+      log.error("[Workspace Service] ✗ Delete error:", error.message);
+      throw new Error(error.message);
+    }
+
+    log.info("[Workspace Service] ✓ Workspace deleted successfully");
+    log.info("[Workspace Service] === DELETE WORKSPACE END ===");
+  }
+
+  /**
+   * Get all workspaces a user is a member of (across all tenants)
+   */
+  async getUserWorkspaces(
+    userId: string
+  ): Promise<(Workspace & { role: UserRole })[]> {
+    log.info("[Workspace Service] Getting all workspaces for user:", userId);
+
+    const supabase = getSupabase();
+    if (!supabase) {
+      log.warn("[Workspace Service] Supabase not configured");
+      return [];
+    }
+
+    // Step 1: Get all (workspace_id, role) pairs for this user
+    const { data: memberRows, error: memberError } = await supabase
+      .from("workspace_members")
+      .select("workspace_id, role")
+      .eq("user_id", userId);
+
+    if (memberError) {
+      log.error(
+        "[Workspace Service] Error fetching user workspace memberships:",
+        memberError.message
+      );
+      return [];
+    }
+
+    if (!memberRows || memberRows.length === 0) return [];
+
+    // Step 2: Fetch workspace details for all workspace_ids
+    const workspaceIds = memberRows.map((r) => r.workspace_id as string);
+    const { data: wsRows, error: wsError } = await supabase
+      .from("workspaces")
+      .select("*")
+      .in("id", workspaceIds);
+
+    if (wsError) {
+      log.error(
+        "[Workspace Service] Error fetching workspace details:",
+        wsError.message
+      );
+      return [];
+    }
+
+    // Step 3: Merge role into each workspace
+    return (wsRows || []).map((ws) => {
+      const membership = memberRows.find((r) => r.workspace_id === ws.id);
+      return {
+        ...this.mapSupabaseWorkspace(ws as Record<string, unknown>),
+        role: (membership?.role ?? "dev") as UserRole,
+      };
+    });
   }
 
   /**

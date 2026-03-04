@@ -38,6 +38,18 @@ export interface WorkspaceMember {
   joinedAt: string;
 }
 
+export interface WorkspaceMemberWithUser extends WorkspaceMember {
+  user: {
+    id: string;
+    name: string;
+    email: string;
+  };
+}
+
+export interface WorkspaceWithRole extends Workspace {
+  role: UserRole;
+}
+
 export interface WorkspaceWithMembers extends Workspace {
   members?: WorkspaceMember[];
   currentUserRole?: UserRole;
@@ -164,8 +176,10 @@ export type IPCChannel =
   | "workspace:get"
   | "workspace:update"
   | "workspace:delete"
+  | "workspace:get-user-workspaces"
   | "workspace-member:add"
   | "workspace-member:list"
+  | "workspace-member:list-with-users"
   | "workspace-member:remove"
   | "workspace-member:update-role"
   | "workspace-member:invite"

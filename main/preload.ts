@@ -49,6 +49,9 @@ const api = {
     ipcRenderer.invoke("workspace:list", { tenantId }),
   updateWorkspace: (workspaceId: string, name?: string, description?: string) =>
     ipcRenderer.invoke("workspace:update", { workspaceId, name, description }),
+  deleteWorkspace: (workspaceId: string) =>
+    ipcRenderer.invoke("workspace:delete", { workspaceId }),
+  getUserWorkspaces: () => ipcRenderer.invoke("workspace:get-user-workspaces"),
   inviteTeamMember: (
     workspaceId: string,
     email: string,
@@ -57,6 +60,20 @@ const api = {
     ipcRenderer.invoke("workspace-member:invite", { workspaceId, email, role }),
   listWorkspaceMembers: (workspaceId: string) =>
     ipcRenderer.invoke("workspace-member:list", { workspaceId }),
+  listWorkspaceMembersWithUsers: (workspaceId: string) =>
+    ipcRenderer.invoke("workspace-member:list-with-users", { workspaceId }),
+  removeWorkspaceMember: (workspaceId: string, userId: string) =>
+    ipcRenderer.invoke("workspace-member:remove", { workspaceId, userId }),
+  updateMemberRole: (
+    workspaceId: string,
+    userId: string,
+    role: "admin" | "pm" | "qa" | "dev" | "client"
+  ) =>
+    ipcRenderer.invoke("workspace-member:update-role", {
+      workspaceId,
+      userId,
+      role,
+    }),
 
   // Onboarding
   getOnboardingStatus: () => ipcRenderer.invoke("onboarding:get-status"),
@@ -316,7 +333,8 @@ const api = {
   },
 
   // Utility methods
-  openExternalUrl: (url: string) => ipcRenderer.invoke("util:open-external", { url }),
+  openExternalUrl: (url: string) =>
+    ipcRenderer.invoke("util:open-external", { url }),
 };
 
 contextBridge.exposeInMainWorld("ipc", handler);

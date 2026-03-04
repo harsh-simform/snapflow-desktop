@@ -261,7 +261,9 @@ export class ConnectorService {
         );
       }
       if (errorMsg.includes("unique constraint")) {
-        throw new Error("A connector with this name already exists. Please choose a different name.");
+        throw new Error(
+          "A connector with this name already exists. Please choose a different name."
+        );
       }
 
       throw new Error("Failed to add connector");
@@ -767,9 +769,7 @@ export class ConnectorService {
     try {
       // Check if already synced to this Zoho project
       const existingSync = issue.syncedTo?.find(
-        (sync) =>
-          sync.platform === "zoho" &&
-          sync.connectorId === connector.id
+        (sync) => sync.platform === "zoho" && sync.connectorId === connector.id
       );
 
       if (existingSync) {
@@ -793,7 +793,7 @@ export class ConnectorService {
           try {
             const url = new URL(apiDomain);
             apiDomain = url.hostname;
-          } catch (e) {
+          } catch (_e) {
             log.warn("[Zoho] Failed to parse apiDomain as URL:", apiDomain);
           }
         }
@@ -819,7 +819,8 @@ export class ConnectorService {
           config.projectId,
           {
             title: issue.title,
-            description: issue.description || "Screenshot captured from SnapFlow",
+            description:
+              issue.description || "Screenshot captured from SnapFlow",
             imageUrl: issue.cloudFileUrl,
           }
         );
@@ -857,12 +858,16 @@ export class ConnectorService {
               config.projectId,
               {
                 title: issue.title,
-                description: issue.description || "Screenshot captured from SnapFlow",
+                description:
+                  issue.description || "Screenshot captured from SnapFlow",
                 imageUrl: issue.cloudFileUrl,
               }
             );
 
-            log.info("[Zoho] Bug created successfully after token refresh:", result.bugId);
+            log.info(
+              "[Zoho] Bug created successfully after token refresh:",
+              result.bugId
+            );
             return {
               bugId: result.bugId,
               url: result.url,
@@ -890,12 +895,9 @@ export class ConnectorService {
           cause: error,
         });
       } else if (error.response?.status === 403) {
-        throw new Error(
-          "Zoho API access denied or insufficient permissions",
-          {
-            cause: error,
-          }
-        );
+        throw new Error("Zoho API access denied or insufficient permissions", {
+          cause: error,
+        });
       }
       throw new Error(
         `Failed to sync to Zoho: ${error.response?.data?.message || error.response?.data?.errorMessage || error.message}`,
@@ -946,9 +948,13 @@ export class ConnectorService {
 
       log.info("[GitHub] ✓ Issue #", issueNumber, "closed successfully");
     } catch (error) {
-      log.error("[GitHub] ✗ Failed to close issue:", error.response?.data || error.message);
+      log.error(
+        "[GitHub] ✗ Failed to close issue:",
+        error.response?.data || error.message
+      );
       throw new Error(
-        `Failed to close GitHub issue: ${error.response?.data?.message || error.message}`
+        `Failed to close GitHub issue: ${error.response?.data?.message || error.message}`,
+        { cause: error }
       );
     }
   }
@@ -978,7 +984,7 @@ export class ConnectorService {
           try {
             const url = new URL(apiDomain);
             apiDomain = url.hostname;
-          } catch (e) {
+          } catch (_e) {
             log.warn("[Zoho] Failed to parse apiDomain as URL:", apiDomain);
           }
         }
@@ -1034,7 +1040,8 @@ export class ConnectorService {
             // Retry update with new token
             const updateData: { title?: string; description?: string } = {};
             if (updates.title) updateData.title = updates.title;
-            if (updates.description) updateData.description = updates.description;
+            if (updates.description)
+              updateData.description = updates.description;
 
             await zohoService.updateBug(
               accessToken,
@@ -1074,10 +1081,7 @@ export class ConnectorService {
   /**
    * Delete a Zoho bug
    */
-  async deleteZohoBug(
-    connector: Connector,
-    bugId: string
-  ): Promise<void> {
+  async deleteZohoBug(connector: Connector, bugId: string): Promise<void> {
     const config = connector.config as ZohoConnectorConfig;
 
     if (!config.accessToken || !config.portalId || !config.projectId) {
@@ -1095,7 +1099,7 @@ export class ConnectorService {
           try {
             const url = new URL(apiDomain);
             apiDomain = url.hostname;
-          } catch (e) {
+          } catch (_e) {
             log.warn("[Zoho] Failed to parse apiDomain as URL:", apiDomain);
           }
         }

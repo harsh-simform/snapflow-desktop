@@ -58,7 +58,10 @@ export class ZohoService {
     // For Projects API, always extract from accounts server first
     // The api_domain from OAuth might not work directly with Projects API
     // Example: api_domain="zohoapis.in" but Projects API needs "zoho.in"
-    const accountsDomain = new URL(accountsServerUrl).hostname.replace("accounts.", "");
+    const accountsDomain = new URL(accountsServerUrl).hostname.replace(
+      "accounts.",
+      ""
+    );
     log.info("[Zoho] Extracted domain from accounts server:", accountsDomain);
 
     // Use the accounts-derived domain for Projects API
@@ -67,7 +70,11 @@ export class ZohoService {
 
     // Log the apiDomain for reference if provided
     if (apiDomain) {
-      log.info("[Zoho] Note: api_domain from OAuth was:", apiDomain, "(not used for Projects API)");
+      log.info(
+        "[Zoho] Note: api_domain from OAuth was:",
+        apiDomain,
+        "(not used for Projects API)"
+      );
     }
 
     // Construct the Projects API base URL using V3 API (new version)
@@ -76,7 +83,12 @@ export class ZohoService {
 
     log.info("[Zoho] Final domain used:", domain);
     log.info("[Zoho] Constructed Projects API V3 base URL:", this.apiBaseUrl);
-    log.info("[Zoho] Updated URLs - Auth:", this.authBaseUrl, "API:", this.apiBaseUrl);
+    log.info(
+      "[Zoho] Updated URLs - Auth:",
+      this.authBaseUrl,
+      "API:",
+      this.apiBaseUrl
+    );
   }
 
   private get clientId(): string {
@@ -87,7 +99,8 @@ export class ZohoService {
 
   private get clientSecret(): string {
     const secret = process.env.ZOHO_CLIENT_SECRET;
-    if (!secret) throw new Error("ZOHO_CLIENT_SECRET environment variable not set");
+    if (!secret)
+      throw new Error("ZOHO_CLIENT_SECRET environment variable not set");
     return secret;
   }
 
@@ -124,7 +137,10 @@ export class ZohoService {
     log.info("[Zoho] Redirect URI:", this.redirectUri);
     log.info("[Zoho] Auth Base URL:", this.authBaseUrl);
     log.info("[Zoho] ✓ Auth URL generated");
-    log.info("[Zoho] Full URL (masked):", url.replace(/client_id=[^&]*/, "client_id=***"));
+    log.info(
+      "[Zoho] Full URL (masked):",
+      url.replace(/client_id=[^&]*/, "client_id=***")
+    );
     log.info("[Zoho] ========== AUTH URL GENERATION END ==========");
     return url;
   }
@@ -136,7 +152,9 @@ export class ZohoService {
     log.info("[Zoho] ========== TOKEN EXCHANGE START ==========");
 
     if (!this.clientId || !this.clientSecret) {
-      log.error("[Zoho] Missing credentials - ZOHO_CLIENT_ID or ZOHO_CLIENT_SECRET not configured");
+      log.error(
+        "[Zoho] Missing credentials - ZOHO_CLIENT_ID or ZOHO_CLIENT_SECRET not configured"
+      );
       throw new Error("ZOHO_CLIENT_ID or ZOHO_CLIENT_SECRET not configured");
     }
 
@@ -159,10 +177,15 @@ export class ZohoService {
 
       const paramsString = params.toString();
       log.info("[Zoho] URLSearchParams built, length:", paramsString.length);
-      log.info("[Zoho] URLSearchParams string (masked):", paramsString.replace(/client_secret=[^&]*/, "client_secret=***"));
+      log.info(
+        "[Zoho] URLSearchParams string (masked):",
+        paramsString.replace(/client_secret=[^&]*/, "client_secret=***")
+      );
 
       log.info("[Zoho] Sending POST request to:", `${this.authBaseUrl}/token`);
-      log.info("[Zoho] Request headers:", { "Content-Type": "application/x-www-form-urlencoded" });
+      log.info("[Zoho] Request headers:", {
+        "Content-Type": "application/x-www-form-urlencoded",
+      });
 
       const response = await axios.post(
         `${this.authBaseUrl}/token`,
@@ -179,12 +202,19 @@ export class ZohoService {
       log.info("[Zoho] Response headers:", JSON.stringify(response.headers));
       log.info("[Zoho] Response data keys:", Object.keys(response.data));
 
-      const { access_token, refresh_token, expires_in, api_domain } = response.data;
+      const { access_token, refresh_token, expires_in, api_domain } =
+        response.data;
 
       log.info("[Zoho] Access token present:", !!access_token);
-      log.info("[Zoho] Access token length:", access_token ? access_token.length : 0);
+      log.info(
+        "[Zoho] Access token length:",
+        access_token ? access_token.length : 0
+      );
       log.info("[Zoho] Refresh token present:", !!refresh_token);
-      log.info("[Zoho] Refresh token length:", refresh_token ? refresh_token.length : 0);
+      log.info(
+        "[Zoho] Refresh token length:",
+        refresh_token ? refresh_token.length : 0
+      );
       log.info("[Zoho] Expires in:", expires_in);
       log.info("[Zoho] API domain:", api_domain || "NOT PROVIDED");
 
@@ -204,12 +234,21 @@ export class ZohoService {
       };
     } catch (error) {
       log.error("[Zoho] ✗ Token exchange failed");
-      log.error("[Zoho] Error type:", error instanceof Error ? error.constructor.name : typeof error);
-      log.error("[Zoho] Error message:", error instanceof Error ? error.message : String(error));
+      log.error(
+        "[Zoho] Error type:",
+        error instanceof Error ? error.constructor.name : typeof error
+      );
+      log.error(
+        "[Zoho] Error message:",
+        error instanceof Error ? error.message : String(error)
+      );
 
       if (error.response) {
         log.error("[Zoho] Response status:", error.response.status);
-        log.error("[Zoho] Response headers:", JSON.stringify(error.response.headers));
+        log.error(
+          "[Zoho] Response headers:",
+          JSON.stringify(error.response.headers)
+        );
         log.error("[Zoho] Response data:", JSON.stringify(error.response.data));
         log.error("[Zoho] Response data type:", typeof error.response.data);
       } else if (error.request) {
@@ -225,7 +264,10 @@ export class ZohoService {
 
       log.info("[Zoho] ========== TOKEN EXCHANGE END (ERROR) ==========");
 
-      throw new Error(`Failed to exchange Zoho authorization code: ${error.response?.data?.error_description || error.message}`);
+      throw new Error(
+        `Failed to exchange Zoho authorization code: ${error.response?.data?.error_description || error.message}`,
+        { cause: error }
+      );
     }
   }
 
@@ -249,11 +291,14 @@ export class ZohoService {
       // V3 API returns portals as an array directly, not wrapped in an object
       const portals = Array.isArray(response.data)
         ? response.data
-        : (response.data.portals || response.data.data || []);
+        : response.data.portals || response.data.data || [];
       log.info("[Zoho] ✓ Fetched", portals.length, "portals");
 
       if (portals.length > 0) {
-        log.info("[Zoho] First portal:", portals[0].portal_name || portals[0].name);
+        log.info(
+          "[Zoho] First portal:",
+          portals[0].portal_name || portals[0].name
+        );
       }
 
       log.info("[Zoho] ========== FETCH PORTALS END (SUCCESS) ==========");
@@ -263,7 +308,8 @@ export class ZohoService {
       log.error("[Zoho] Error:", error.response?.data || error.message);
       log.info("[Zoho] ========== FETCH PORTALS END (ERROR) ==========");
       throw new Error(
-        `Failed to fetch Zoho portals: ${error.response?.data?.message || error.response?.data?.errorMessage || error.message}`
+        `Failed to fetch Zoho portals: ${error.response?.data?.message || error.response?.data?.errorMessage || error.message}`,
+        { cause: error }
       );
     }
   }
@@ -271,7 +317,10 @@ export class ZohoService {
   /**
    * Fetch list of projects for a specific portal
    */
-  async getProjects(accessToken: string, portalId: string): Promise<ZohoProject[]> {
+  async getProjects(
+    accessToken: string,
+    portalId: string
+  ): Promise<ZohoProject[]> {
     log.info("[Zoho] ========== FETCH PROJECTS START ==========");
     log.info("[Zoho] Portal ID:", portalId);
     log.info("[Zoho] Access token length:", accessToken.length);
@@ -289,11 +338,14 @@ export class ZohoService {
       // V3 API returns projects as an array directly, not wrapped in an object
       const projects = Array.isArray(response.data)
         ? response.data
-        : (response.data.projects || response.data.data || []);
+        : response.data.projects || response.data.data || [];
       log.info("[Zoho] ✓ Fetched", projects.length, "projects");
 
       if (projects.length > 0) {
-        log.info("[Zoho] First project:", projects[0].name || (projects[0] as any).project_name);
+        log.info(
+          "[Zoho] First project:",
+          projects[0].name || (projects[0] as any).project_name
+        );
       }
 
       log.info("[Zoho] ========== FETCH PROJECTS END (SUCCESS) ==========");
@@ -303,7 +355,8 @@ export class ZohoService {
       log.error("[Zoho] Error:", error.response?.data || error.message);
       log.info("[Zoho] ========== FETCH PROJECTS END (ERROR) ==========");
       throw new Error(
-        `Failed to fetch Zoho projects: ${error.response?.data?.message || error.response?.data?.errorMessage || error.message}`
+        `Failed to fetch Zoho projects: ${error.response?.data?.message || error.response?.data?.errorMessage || error.message}`,
+        { cause: error }
       );
     }
   }
@@ -345,7 +398,10 @@ export class ZohoService {
         client_secret: this.clientSecret,
       });
 
-      log.info("[Zoho] Sending refresh token request to:", `${this.authBaseUrl}/token`);
+      log.info(
+        "[Zoho] Sending refresh token request to:",
+        `${this.authBaseUrl}/token`
+      );
 
       const response = await axios.post(
         `${this.authBaseUrl}/token`,
@@ -367,14 +423,19 @@ export class ZohoService {
         throw new Error("No access token in refresh response");
       }
 
-      log.info("[Zoho] ✓ New access token obtained, length:", access_token.length);
+      log.info(
+        "[Zoho] ✓ New access token obtained, length:",
+        access_token.length
+      );
       log.info("[Zoho] ========== TOKEN REFRESH END (SUCCESS) ==========");
       return access_token;
     } catch (error) {
       log.error("[Zoho] ✗ Token refresh failed");
       log.error("[Zoho] Error:", error.response?.data || error.message);
       log.info("[Zoho] ========== TOKEN REFRESH END (ERROR) ==========");
-      throw new Error(`Failed to refresh Zoho token: ${error.message}`);
+      throw new Error(`Failed to refresh Zoho token: ${error.message}`, {
+        cause: error,
+      });
     }
   }
 
@@ -398,7 +459,10 @@ export class ZohoService {
 
     try {
       // Use REST API endpoint (not V3) as per Zoho official documentation
-      const domain = new URL(this.accountsServer).hostname.replace("accounts.", "");
+      const domain = new URL(this.accountsServer).hostname.replace(
+        "accounts.",
+        ""
+      );
       const restApiBase = `https://projectsapi.${domain}/restapi`;
       const endpoint = `${restApiBase}/portal/${portalId}/projects/${projectId}/bugs/${bugId}/`;
       log.info("[Zoho] Sending POST request to:", endpoint);
@@ -415,16 +479,12 @@ export class ZohoService {
       const bodyString = bugData.toString();
       log.info("[Zoho] Request body (form-encoded):", bodyString);
 
-      const response = await axios.post(
-        endpoint,
-        bodyString,
-        {
-          headers: {
-            Authorization: `Zoho-oauthtoken ${accessToken}`,
-            "Content-Type": "application/x-www-form-urlencoded",
-          },
-        }
-      );
+      const response = await axios.post(endpoint, bodyString, {
+        headers: {
+          Authorization: `Zoho-oauthtoken ${accessToken}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+      });
 
       log.info("[Zoho] ✓ Bug updated successfully");
       log.info("[Zoho] Response status:", response.status);
@@ -433,7 +493,10 @@ export class ZohoService {
     } catch (error) {
       log.error("[Zoho] ✗ Failed to update bug");
       log.error("[Zoho] Error status:", error.response?.status);
-      log.error("[Zoho] Error data (full):", JSON.stringify(error.response?.data, null, 2));
+      log.error(
+        "[Zoho] Error data (full):",
+        JSON.stringify(error.response?.data, null, 2)
+      );
       log.error("[Zoho] Error message:", error.message);
 
       log.info("[Zoho] ========== UPDATE BUG END (ERROR) ==========");
@@ -448,7 +511,9 @@ export class ZohoService {
         errorMsg = error.response.data.error.message;
       }
 
-      throw new Error(`Failed to update Zoho bug: ${errorMsg}`);
+      throw new Error(`Failed to update Zoho bug: ${errorMsg}`, {
+        cause: error,
+      });
     }
   }
 
@@ -470,19 +535,19 @@ export class ZohoService {
 
     try {
       // Use REST API endpoint (not V3) as per Zoho official documentation
-      const domain = new URL(this.accountsServer).hostname.replace("accounts.", "");
+      const domain = new URL(this.accountsServer).hostname.replace(
+        "accounts.",
+        ""
+      );
       const restApiBase = `https://projectsapi.${domain}/restapi`;
       const endpoint = `${restApiBase}/portal/${portalId}/projects/${projectId}/bugs/${bugId}/`;
       log.info("[Zoho] Sending DELETE request to:", endpoint);
 
-      const response = await axios.delete(
-        endpoint,
-        {
-          headers: {
-            Authorization: `Zoho-oauthtoken ${accessToken}`,
-          },
-        }
-      );
+      const response = await axios.delete(endpoint, {
+        headers: {
+          Authorization: `Zoho-oauthtoken ${accessToken}`,
+        },
+      });
 
       log.info("[Zoho] ✓ Bug deleted successfully");
       log.info("[Zoho] Response status:", response.status);
@@ -490,12 +555,18 @@ export class ZohoService {
     } catch (error) {
       log.error("[Zoho] ✗ Failed to delete bug");
       log.error("[Zoho] Error status:", error.response?.status);
-      log.error("[Zoho] Error data:", JSON.stringify(error.response?.data, null, 2));
+      log.error(
+        "[Zoho] Error data:",
+        JSON.stringify(error.response?.data, null, 2)
+      );
       log.error("[Zoho] Error message:", error.message);
       log.info("[Zoho] ========== DELETE BUG END (ERROR) ==========");
 
       // Re-throw with clear error message
-      throw new Error(`Failed to delete Zoho bug: ${error.response?.data?.error?.title || error.message}`);
+      throw new Error(
+        `Failed to delete Zoho bug: ${error.response?.data?.error?.title || error.message}`,
+        { cause: error }
+      );
     }
   }
 
@@ -517,7 +588,10 @@ export class ZohoService {
 
     try {
       // Use REST API endpoint (not V3) as per Zoho official documentation
-      const domain = new URL(this.accountsServer).hostname.replace("accounts.", "");
+      const domain = new URL(this.accountsServer).hostname.replace(
+        "accounts.",
+        ""
+      );
       const restApiBase = `https://projectsapi.${domain}/restapi`;
       const endpoint = `${restApiBase}/portal/${portalId}/projects/${projectId}/bugs/`;
       log.info("[Zoho] Sending POST request to:", endpoint);
@@ -535,18 +609,17 @@ export class ZohoService {
         description,
       });
 
-      log.info("[Zoho] Bug data being sent (form-encoded):", bugData.toString());
-
-      const response = await axios.post(
-        endpoint,
-        bugData.toString(),
-        {
-          headers: {
-            Authorization: `Zoho-oauthtoken ${accessToken}`,
-            "Content-Type": "application/x-www-form-urlencoded",
-          },
-        }
+      log.info(
+        "[Zoho] Bug data being sent (form-encoded):",
+        bugData.toString()
       );
+
+      const response = await axios.post(endpoint, bugData.toString(), {
+        headers: {
+          Authorization: `Zoho-oauthtoken ${accessToken}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+      });
 
       log.info("[Zoho] ✓ Bug created successfully");
       log.info("[Zoho] Response status:", response.status);
@@ -567,11 +640,12 @@ export class ZohoService {
       }
 
       // Get URL from API response - Zoho returns nested link objects
-      let url = (createdBug as any).web?.url ||
-                (createdBug as any).link?.url ||
-                (createdBug as any).url ||
-                (createdBug as any).html_url ||
-                (createdBug as any).web_url;
+      let url =
+        (createdBug as any).web?.url ||
+        (createdBug as any).link?.url ||
+        (createdBug as any).url ||
+        (createdBug as any).html_url ||
+        (createdBug as any).web_url;
 
       if (!url) {
         // Fallback: Construct bug URL with correct Zoho format and regional domain
@@ -587,9 +661,15 @@ export class ZohoService {
     } catch (error) {
       log.error("[Zoho] ✗ Failed to create bug");
       log.error("[Zoho] Error status:", error.response?.status);
-      log.error("[Zoho] Error data (full):", JSON.stringify(error.response?.data, null, 2));
+      log.error(
+        "[Zoho] Error data (full):",
+        JSON.stringify(error.response?.data, null, 2)
+      );
       if (error.response?.data?.error?.details) {
-        log.error("[Zoho] Validation details:", JSON.stringify(error.response.data.error.details, null, 2));
+        log.error(
+          "[Zoho] Validation details:",
+          JSON.stringify(error.response.data.error.details, null, 2)
+        );
       }
       log.error("[Zoho] Error message:", error.message);
       log.info("[Zoho] ========== CREATE BUG END (ERROR) ==========");
@@ -602,7 +682,9 @@ export class ZohoService {
         errorMsg = error.response.data.error.title;
       }
 
-      throw new Error(`Failed to create Zoho bug: ${errorMsg}`);
+      throw new Error(`Failed to create Zoho bug: ${errorMsg}`, {
+        cause: error,
+      });
     }
   }
 }

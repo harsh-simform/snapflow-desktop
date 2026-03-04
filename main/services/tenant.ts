@@ -100,7 +100,7 @@ export class TenantService {
    * Get tenant by owner (user)
    */
   async getTenantByOwner(userId: string): Promise<Tenant | null> {
-    log.info("[Tenant Service] Getting tenant by owner:", userId);
+    log.info("[Tenant Service] Getting tenant for user:", userId);
 
     const supabase = getSupabase();
     if (!supabase) {
@@ -108,23 +108,44 @@ export class TenantService {
       return null;
     }
 
-    const { data, error } = await supabase
+    // 1. Try as tenant owner first
+    const { data: ownerData, error: ownerError } = await supabase
       .from("tenants")
       .select("*")
       .eq("owner_id", userId)
       .single();
 
-    if (error) {
-      // PGRST116 = "not found" in Supabase
-      if (error.code === "PGRST116") {
-        log.info("[Tenant Service] No tenant found for user");
-        return null;
-      }
-      log.error("[Tenant Service] Error fetching tenant:", error.message);
+    if (!ownerError && ownerData) {
+      log.info("[Tenant Service] Found tenant as owner");
+      return this.mapSupabaseTenant(ownerData);
+    }
+
+    // 2. Fall back: look up tenant via workspace membership
+    log.info(
+      "[Tenant Service] Not owner — looking up tenant via workspace membership"
+    );
+    const { data: memberData, error: memberError } = await supabase
+      .from("workspace_members")
+      .select("workspace_id, workspaces:workspace_id(tenant_id)")
+      .eq("user_id", userId)
+      .limit(1)
+      .single();
+
+    if (memberError || !memberData) {
+      log.info("[Tenant Service] No workspace membership found for user");
       return null;
     }
 
-    return this.mapSupabaseTenant(data);
+    const ws = memberData.workspaces as unknown as { tenant_id: string } | null;
+    const tenantId = ws?.tenant_id;
+    if (!tenantId) {
+      log.warn(
+        "[Tenant Service] Could not resolve tenant_id from workspace membership"
+      );
+      return null;
+    }
+
+    return this.getTenantById(tenantId);
   }
 
   /**

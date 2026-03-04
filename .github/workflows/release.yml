@@ -40,6 +40,7 @@ jobs:
         run: |
           echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> .env
           echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> .env
+          echo "SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" >> .env
           echo "GITHUB_CLIENT_ID=${{ secrets.CLIENT_ID }}" >> .env
           echo "GITHUB_CLIENT_SECRET=${{ secrets.CLIENT_SECRET }}" >> .env
           echo "ZOHO_CLIENT_ID=${{ secrets.ZOHO_CLIENT_ID }}" >> .env

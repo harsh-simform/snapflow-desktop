@@ -26,14 +26,149 @@ import {
   DialogVisuallyHidden,
 } from "../components/ui/Dialog";
 import { WindowControls } from "../components/ui/WindowControls";
+import { WorkspaceSwitcher } from "../components/ui/WorkspaceSwitcher";
 import { useStore } from "../store/useStore";
 import { LocalImage } from "../components/ui/LocalImage";
 import type { Issue } from "../types";
 
+// ─── Profile Dropdown ─────────────────────────────────────────────────────────
+
+function ProfileDropdown({
+  user,
+  onSettings,
+  onLogout,
+}: {
+  user: { name?: string; email?: string } | null;
+  onSettings: () => void;
+  onLogout: () => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2.5 h-9 pl-2 pr-3 rounded-lg hover:bg-gray-800/60 transition-all group"
+      >
+        <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-semibold text-sm shadow-lg flex-shrink-0">
+          {user?.name?.charAt(0).toUpperCase() ?? "?"}
+        </div>
+        <span className="text-sm font-medium text-gray-300 max-w-[120px] truncate">
+          {user?.name ?? ""}
+        </span>
+        <svg
+          className={`w-3.5 h-3.5 text-gray-500 transition-transform flex-shrink-0 ${open ? "rotate-180" : ""}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M19 9l-7 7-7-7"
+          />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-2 w-56 bg-gray-900 border border-gray-700/50 rounded-xl shadow-2xl z-50 overflow-hidden">
+          {/* User info */}
+          <div className="px-4 py-3 border-b border-gray-800">
+            <p className="text-sm font-medium text-gray-200 truncate">
+              {user?.name}
+            </p>
+            <p className="text-xs text-gray-500 truncate mt-0.5">
+              {user?.email}
+            </p>
+          </div>
+
+          {/* Menu items */}
+          <div className="p-1.5 space-y-0.5">
+            <button
+              onClick={() => {
+                setOpen(false);
+                onSettings();
+              }}
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-gray-300 hover:bg-gray-800/60 hover:text-gray-100 transition-all text-left"
+            >
+              <svg
+                className="w-4 h-4 text-gray-400 flex-shrink-0"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                />
+              </svg>
+              Settings
+            </button>
+
+            <div className="h-px bg-gray-800 my-1" />
+
+            <button
+              onClick={() => {
+                setOpen(false);
+                onLogout();
+              }}
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-all text-left"
+            >
+              <svg
+                className="w-4 h-4 flex-shrink-0"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                />
+              </svg>
+              Sign out
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Home Page ─────────────────────────────────────────────────────────────────
+
 export default function HomePage() {
   const router = useRouter();
-  const { user, setUser, issues, setIssues, deleteIssue, updateIssue } =
-    useStore();
+  const {
+    user,
+    setUser,
+    issues,
+    setIssues,
+    deleteIssue,
+    updateIssue,
+    activeWorkspace,
+    setActiveWorkspace,
+  } = useStore();
   const [loading, setLoading] = useState(true);
   const [workspaceId, setWorkspaceId] = useState<string>("");
   const [filter, setFilter] = useState<"all" | "screenshot" | "recording">(
@@ -68,14 +203,26 @@ export default function HomePage() {
       // Reload issues from local storage to get updated sync status
       const issuesResult = await window.api.listIssues(data.userId);
       if (issuesResult.success) {
-        console.log("[Home] Reloaded issues after auto-sync:", issuesResult.data?.length, "snaps");
+        console.log(
+          "[Home] Reloaded issues after auto-sync:",
+          issuesResult.data?.length,
+          "snaps"
+        );
         if (issuesResult.data && issuesResult.data.length > 0) {
-          console.log("[Home] First snap sync status:", issuesResult.data[0].syncStatus);
+          console.log(
+            "[Home] First snap sync status:",
+            issuesResult.data[0].syncStatus
+          );
         }
         setIssues(issuesResult.data || []);
-        console.log("[Home] Issues reloaded after auto-sync, Zustand store updated");
+        console.log(
+          "[Home] Issues reloaded after auto-sync, Zustand store updated"
+        );
       } else {
-        console.error("[Home] Failed to reload issues after auto-sync:", issuesResult.error);
+        console.error(
+          "[Home] Failed to reload issues after auto-sync:",
+          issuesResult.error
+        );
       }
     });
 
@@ -111,6 +258,14 @@ export default function HomePage() {
           );
           if (workspacesResult.success && workspacesResult.data?.length > 0) {
             setWorkspaceId(workspacesResult.data[0].id);
+          }
+        }
+
+        // Load user workspaces for the switcher
+        const wsResult = await window.api.getUserWorkspaces();
+        if (wsResult.success && wsResult.data?.length) {
+          if (!activeWorkspace) {
+            setActiveWorkspace(wsResult.data[0]);
           }
         }
 
@@ -336,7 +491,7 @@ export default function HomePage() {
     setCurrentPage(1);
   }, [filter, statusFilter, searchQuery, tagsFilter, sortBy, sortOrder]);
 
-  const getGitHubSyncBadge = (issue: Issue) => {
+  const _getGitHubSyncBadge = (issue: Issue) => {
     const githubSync = issue.syncedTo?.find(
       (sync) => sync.platform === "github"
     );
@@ -348,7 +503,7 @@ export default function HomePage() {
     return null;
   };
 
-  const getZohoSyncBadge = (issue: Issue) => {
+  const _getZohoSyncBadge = (issue: Issue) => {
     const zohoSync = issue.syncedTo?.find((sync) => sync.platform === "zoho");
 
     if (zohoSync) {
@@ -1107,49 +1262,12 @@ export default function HomePage() {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ duration: 0.3, delay: 0.1 }}
               >
-                <Button
-                  variant="ghost"
-                  onClick={() => router.push("/settings")}
-                  leftIcon={
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-                      />
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                      />
-                    </svg>
-                  }
-                >
-                  Settings
-                </Button>
-                <div className="flex items-center space-x-3 pl-3 border-l border-gray-700/50">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-9 h-9 bg-blue-600 rounded-full flex items-center justify-center text-white font-semibold shadow-lg">
-                      {user?.name?.charAt(0).toUpperCase()}
-                    </div>
-                    <span className="text-sm font-medium text-gray-300">
-                      {user?.name}
-                    </span>
-                  </div>
-                  <button
-                    onClick={handleLogout}
-                    className="h-8 px-3 text-sm inline-flex items-center justify-center rounded-lg font-medium transition-all duration-200 bg-transparent text-gray-400 hover:bg-gray-800/50 hover:text-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-500/50"
-                  >
-                    Logout
-                  </button>
-                </div>
+                <WorkspaceSwitcher />
+                <ProfileDropdown
+                  user={user}
+                  onSettings={() => router.push("/settings")}
+                  onLogout={handleLogout}
+                />
               </motion.div>
             </div>
           </div>
@@ -1848,79 +1966,90 @@ export default function HomePage() {
                     </div>
 
                     {/* External Links - Open in Web */}
-                    {previewIssue.syncedTo && previewIssue.syncedTo.length > 0 && (
-                      <div>
-                        <label className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2 block">
-                          External Links
-                        </label>
-                        <div className="space-y-2">
-                          {previewIssue.syncedTo.map((sync) => (
-                            <button
-                              key={`${sync.platform}-${sync.externalId}`}
-                              onClick={() => {
-                                if (sync.url) {
-                                  window.api.openExternalUrl(sync.url);
+                    {previewIssue.syncedTo &&
+                      previewIssue.syncedTo.length > 0 && (
+                        <div>
+                          <label className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2 block">
+                            External Links
+                          </label>
+                          <div className="space-y-2">
+                            {previewIssue.syncedTo.map((sync) => (
+                              <button
+                                key={`${sync.platform}-${sync.externalId}`}
+                                onClick={() => {
+                                  if (sync.url) {
+                                    window.api.openExternalUrl(sync.url);
+                                  }
+                                }}
+                                disabled={!sync.url}
+                                title={
+                                  !sync.url
+                                    ? `Re-sync to ${sync.platform === "github" ? "GitHub" : "Zoho"} to enable this link`
+                                    : `Open in ${sync.platform === "github" ? "GitHub" : "Zoho"}`
                                 }
-                              }}
-                              disabled={!sync.url}
-                              title={!sync.url ? `Re-sync to ${sync.platform === "github" ? "GitHub" : "Zoho"} to enable this link` : `Open in ${sync.platform === "github" ? "GitHub" : "Zoho"}`}
-                              className="w-full px-3 py-2 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90"
-                              style={{
-                                backgroundColor: sync.platform === "github" ? "#1f2937" : "#7c2d12",
-                                color: sync.platform === "github" ? "#60a5fa" : "#fb923c",
-                              }}
-                            >
-                              {sync.platform === "github" ? (
-                                <>
-                                  <svg
-                                    className="w-4 h-4"
-                                    fill="currentColor"
-                                    viewBox="0 0 24 24"
-                                  >
-                                    <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v 3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
-                                  </svg>
-                                  Open in GitHub
-                                </>
-                              ) : sync.platform === "zoho" ? (
-                                <>
-                                  <svg
-                                    className="w-4 h-4"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                    strokeWidth="2"
-                                  >
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-                                    />
-                                  </svg>
-                                  Open in Zoho
-                                </>
-                              ) : (
-                                <>
-                                  <svg
-                                    className="w-4 h-4"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                    strokeWidth="2"
-                                  >
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-                                    />
-                                  </svg>
-                                  Open
-                                </>
-                              )}
-                            </button>
-                          ))}
+                                className="w-full px-3 py-2 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90"
+                                style={{
+                                  backgroundColor:
+                                    sync.platform === "github"
+                                      ? "#1f2937"
+                                      : "#7c2d12",
+                                  color:
+                                    sync.platform === "github"
+                                      ? "#60a5fa"
+                                      : "#fb923c",
+                                }}
+                              >
+                                {sync.platform === "github" ? (
+                                  <>
+                                    <svg
+                                      className="w-4 h-4"
+                                      fill="currentColor"
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v 3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
+                                    </svg>
+                                    Open in GitHub
+                                  </>
+                                ) : sync.platform === "zoho" ? (
+                                  <>
+                                    <svg
+                                      className="w-4 h-4"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                      strokeWidth="2"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                                      />
+                                    </svg>
+                                    Open in Zoho
+                                  </>
+                                ) : (
+                                  <>
+                                    <svg
+                                      className="w-4 h-4"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                      strokeWidth="2"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                                      />
+                                    </svg>
+                                    Open
+                                  </>
+                                )}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
 
                     {/* Date & Time - Compact */}
                     <div>

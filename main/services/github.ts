@@ -36,7 +36,8 @@ export class GitHubService {
 
   private get clientSecret(): string {
     const secret = process.env.GITHUB_CLIENT_SECRET;
-    if (!secret) throw new Error("GITHUB_CLIENT_SECRET environment variable not set");
+    if (!secret)
+      throw new Error("GITHUB_CLIENT_SECRET environment variable not set");
     return secret;
   }
 
@@ -62,7 +63,10 @@ export class GitHubService {
     });
 
     const url = `${this.authBaseUrl}/authorize?${params.toString()}`;
-    log.info("[GitHub] Generated OAuth URL:", url.replace(/client_id=[^&]*/, "client_id=***"));
+    log.info(
+      "[GitHub] Generated OAuth URL:",
+      url.replace(/client_id=[^&]*/, "client_id=***")
+    );
     return url;
   }
 
@@ -71,7 +75,9 @@ export class GitHubService {
    */
   async exchangeCodeForToken(code: string): Promise<GitHubTokens> {
     if (!this.clientId || !this.clientSecret) {
-      throw new Error("GITHUB_CLIENT_ID or GITHUB_CLIENT_SECRET not configured");
+      throw new Error(
+        "GITHUB_CLIENT_ID or GITHUB_CLIENT_SECRET not configured"
+      );
     }
 
     log.info("[GitHub] Exchanging authorization code for access token");
@@ -109,9 +115,13 @@ export class GitHubService {
         expiresIn: 28800, // GitHub tokens don't expire, but we set a default
       };
     } catch (error) {
-      log.error("[GitHub] ✗ Failed to exchange code for token:", error.response?.data || error.message);
+      log.error(
+        "[GitHub] ✗ Failed to exchange code for token:",
+        error.response?.data || error.message
+      );
       throw new Error(
-        `Failed to exchange GitHub authorization code: ${error.response?.data?.error_description || error.message}`
+        `Failed to exchange GitHub authorization code: ${error.response?.data?.error_description || error.message}`,
+        { cause: error }
       );
     }
   }
@@ -139,9 +149,13 @@ export class GitHubService {
       log.info("[GitHub] ✓ Fetched user profile:", user.login);
       return user;
     } catch (error) {
-      log.error("[GitHub] ✗ Failed to fetch user profile:", error.response?.data || error.message);
+      log.error(
+        "[GitHub] ✗ Failed to fetch user profile:",
+        error.response?.data || error.message
+      );
       throw new Error(
-        `Failed to fetch GitHub user profile: ${error.response?.data?.message || error.message}`
+        `Failed to fetch GitHub user profile: ${error.response?.data?.message || error.message}`,
+        { cause: error }
       );
     }
   }
@@ -180,9 +194,13 @@ export class GitHubService {
       log.info("[GitHub] ✓ Fetched", repos.length, "repositories");
       return repos;
     } catch (error) {
-      log.error("[GitHub] ✗ Failed to fetch repositories:", error.response?.data || error.message);
+      log.error(
+        "[GitHub] ✗ Failed to fetch repositories:",
+        error.response?.data || error.message
+      );
       throw new Error(
-        `Failed to fetch GitHub repositories: ${error.response?.data?.message || error.message}`
+        `Failed to fetch GitHub repositories: ${error.response?.data?.message || error.message}`,
+        { cause: error }
       );
     }
   }
@@ -190,7 +208,11 @@ export class GitHubService {
   /**
    * Validate access token and check repository access
    */
-  async validateToken(accessToken: string, owner: string, repo: string): Promise<boolean> {
+  async validateToken(
+    accessToken: string,
+    owner: string,
+    repo: string
+  ): Promise<boolean> {
     try {
       log.info("[GitHub] Validating access token for repo:", owner, "/", repo);
 
@@ -216,7 +238,11 @@ export class GitHubService {
 
       return canPush;
     } catch (error) {
-      log.error("[GitHub] ✗ Token validation failed:", error.response?.status, error.message);
+      log.error(
+        "[GitHub] ✗ Token validation failed:",
+        error.response?.status,
+        error.message
+      );
       return false;
     }
   }
@@ -225,8 +251,10 @@ export class GitHubService {
    * Generate a random state string for CSRF protection
    */
   private generateState(): string {
-    return Math.random().toString(36).substring(2, 15) +
-           Math.random().toString(36).substring(2, 15);
+    return (
+      Math.random().toString(36).substring(2, 15) +
+      Math.random().toString(36).substring(2, 15)
+    );
   }
 }
 

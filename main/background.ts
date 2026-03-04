@@ -21,6 +21,7 @@ import { githubService } from "./services/github";
 import { storageManager } from "./utils/storage";
 import { sessionManager } from "./utils/session";
 import { TrayIconManager } from "./utils/tray-icon-manager";
+import { getSupabase } from "./utils/supabase";
 import fs from "fs";
 
 const {
@@ -1330,7 +1331,44 @@ const handleOAuthCallback = async (url: string) => {
 
     // User is now set via setSession (implicit flow) or auth listener (PKCE flow)
 
-    // Navigate to onboarding
+    // Determine where to navigate: invited users (already workspace members) go to /home,
+    // new users who need to set up their org go to /onboarding.
+    let navigateTo = "/onboarding";
+    try {
+      const currentUserId = sessionManager.getUserId();
+      if (currentUserId) {
+        const existingTenant =
+          await tenantService.getTenantByOwner(currentUserId);
+        if (existingTenant) {
+          // User owns a tenant — they've completed onboarding already
+          log.info("[OAuth] User owns a tenant, navigating to /home");
+          navigateTo = "/home";
+        } else {
+          // Check if user is a member of any workspace (invited user)
+          const supabase = getSupabase();
+          if (supabase) {
+            const { data: memberData } = await supabase
+              .from("workspace_members")
+              .select("workspace_id")
+              .eq("user_id", currentUserId)
+              .limit(1)
+              .single();
+            if (memberData?.workspace_id) {
+              log.info(
+                "[OAuth] Invited user has workspace membership, navigating to /home"
+              );
+              navigateTo = "/home";
+            }
+          }
+        }
+      }
+    } catch (navCheckError) {
+      log.warn(
+        "[OAuth] Could not determine navigation target, defaulting to /onboarding:",
+        navCheckError
+      );
+    }
+
     log.info("[OAuth] Attempting to send navigate event...");
     log.info("[OAuth] mainWindow exists:", !!mainWindow);
     if (mainWindow) {
@@ -1343,8 +1381,8 @@ const handleOAuthCallback = async (url: string) => {
 
     if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
       try {
-        log.info("[OAuth] Sending navigate event to renderer: /onboarding");
-        mainWindow.webContents.send("navigate", "/onboarding");
+        log.info(`[OAuth] Sending navigate event to renderer: ${navigateTo}`);
+        mainWindow.webContents.send("navigate", navigateTo);
         log.info("[OAuth] Navigate event sent successfully ✓");
       } catch (sendError) {
         log.error("[OAuth] Error sending navigate event:", sendError);
@@ -1462,7 +1500,7 @@ const handleZohoCallback = async (url: string) => {
             "[Zoho OAuth] Normalized api_domain from URL to hostname:",
             normalizedApiDomain
           );
-        } catch (e) {
+        } catch (_e) {
           log.warn(
             "[Zoho OAuth] Failed to parse api_domain as URL, using as-is:",
             normalizedApiDomain
@@ -1873,7 +1911,7 @@ function startSessionExpiryMonitor() {
   log.info("[Session] Session expiry monitor started");
 }
 
-function stopSessionExpiryMonitor() {
+function _stopSessionExpiryMonitor() {
   if (sessionExpiryCheckInterval) {
     clearInterval(sessionExpiryCheckInterval);
     sessionExpiryCheckInterval = null;
@@ -2008,7 +2046,7 @@ function startOAuthCallbackServer() {
   });
 }
 
-function stopOAuthCallbackServer() {
+function _stopOAuthCallbackServer() {
   if (oauthCallbackServer) {
     oauthCallbackServer.close();
     oauthCallbackServer = null;
@@ -2211,24 +2249,29 @@ function setupIPCHandlers() {
     }
   });
 
-  ipcMain.handle("tenant:update", async (_event, { tenantId, name, description }) => {
-    try {
-      const userId = sessionManager.getUserId();
-      if (!userId) {
-        throw new Error("User not authenticated");
+  ipcMain.handle(
+    "tenant:update",
+    async (_event, { tenantId, name, description }) => {
+      try {
+        const userId = sessionManager.getUserId();
+        if (!userId) {
+          throw new Error("User not authenticated");
+        }
+        const tenant = await tenantService.updateTenant(tenantId, userId, {
+          name,
+          description,
+        });
+        return { success: true, data: tenant };
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : "An unexpected error occurred";
+        log.error("Update tenant error:", error);
+        return { success: false, error: errorMessage };
       }
-      const tenant = await tenantService.updateTenant(tenantId, userId, {
-        name,
-        description,
-      });
-      return { success: true, data: tenant };
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "An unexpected error occurred";
-      log.error("Update tenant error:", error);
-      return { success: false, error: errorMessage };
     }
-  });
+  );
 
   // Workspace handlers
   ipcMain.handle(
@@ -2269,21 +2312,62 @@ function setupIPCHandlers() {
     }
   });
 
-  ipcMain.handle("workspace:update", async (_event, { workspaceId, name, description }) => {
+  ipcMain.handle(
+    "workspace:update",
+    async (_event, { workspaceId, name, description }) => {
+      try {
+        const userId = sessionManager.getUserId();
+        if (!userId) {
+          throw new Error("User not authenticated");
+        }
+        const workspace = await workspaceService.updateWorkspace(
+          workspaceId,
+          userId,
+          {
+            name,
+            description,
+          }
+        );
+        return { success: true, data: workspace };
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : "An unexpected error occurred";
+        log.error("Update workspace error:", error);
+        return { success: false, error: errorMessage };
+      }
+    }
+  );
+
+  ipcMain.handle("workspace:delete", async (_event, { workspaceId }) => {
     try {
       const userId = sessionManager.getUserId();
       if (!userId) {
         throw new Error("User not authenticated");
       }
-      const workspace = await workspaceService.updateWorkspace(workspaceId, userId, {
-        name,
-        description,
-      });
-      return { success: true, data: workspace };
+      await workspaceService.deleteWorkspace(workspaceId, userId);
+      return { success: true };
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "An unexpected error occurred";
-      log.error("Update workspace error:", error);
+      log.error("Delete workspace error:", error);
+      return { success: false, error: errorMessage };
+    }
+  });
+
+  ipcMain.handle("workspace:get-user-workspaces", async () => {
+    try {
+      const userId = sessionManager.getUserId();
+      if (!userId) {
+        throw new Error("User not authenticated");
+      }
+      const workspaces = await workspaceService.getUserWorkspaces(userId);
+      return { success: true, data: workspaces };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      log.error("Get user workspaces error:", error);
       return { success: false, error: errorMessage };
     }
   });
@@ -2318,7 +2402,61 @@ function setupIPCHandlers() {
     }
   });
 
-  // Onboarding status handler
+  ipcMain.handle(
+    "workspace-member:list-with-users",
+    async (_event, { workspaceId }) => {
+      try {
+        const members =
+          await workspaceService.listMembersWithUsers(workspaceId);
+        return { success: true, data: members };
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : "An unexpected error occurred";
+        log.error("List workspace members with users error:", error);
+        return { success: false, error: errorMessage };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    "workspace-member:remove",
+    async (_event, { workspaceId, userId }) => {
+      try {
+        await workspaceService.removeMember(workspaceId, userId);
+        return { success: true };
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : "An unexpected error occurred";
+        log.error("Remove workspace member error:", error);
+        return { success: false, error: errorMessage };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    "workspace-member:update-role",
+    async (_event, { workspaceId, userId, role }) => {
+      try {
+        const member = await workspaceService.updateMemberRole(
+          workspaceId,
+          userId,
+          role
+        );
+        return { success: true, data: member };
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : "An unexpected error occurred";
+        log.error("Update workspace member role error:", error);
+        return { success: false, error: errorMessage };
+      }
+    }
+  );
   ipcMain.handle("onboarding:get-status", async () => {
     try {
       const userId = sessionManager.getUserId();
@@ -2336,6 +2474,49 @@ function setupIPCHandlers() {
       }
 
       const tenant = await tenantService.getTenantByOwner(userId);
+
+      // Check if user is an invited member of a workspace (non-owner)
+      let isInvitedMember = false;
+      if (!tenant) {
+        const supabase = getSupabase();
+        if (supabase) {
+          const { data: memberData } = await supabase
+            .from("workspace_members")
+            .select("workspace_id")
+            .eq("user_id", userId)
+            .limit(1)
+            .single();
+          if (memberData?.workspace_id) {
+            isInvitedMember = true;
+            log.info(
+              "[Onboarding] User is an invited workspace member, skipping onboarding"
+            );
+          }
+        }
+      }
+
+      // Invited members bypass onboarding entirely
+      if (isInvitedMember) {
+        // Auto-complete onboarding for invited users so they go straight to /home
+        let progress = await onboardingService.getProgress(userId);
+        if (!progress) {
+          await onboardingService.initializeProgress(userId);
+        }
+        if (!progress?.isComplete) {
+          await onboardingService.complete(userId);
+        }
+        return {
+          success: true,
+          data: {
+            hasTenant: false,
+            hasWorkspace: true,
+            hasConnector: false,
+            isComplete: true,
+            currentStep: 5,
+          },
+        };
+      }
+
       const workspaces = tenant
         ? await workspaceService.listWorkspaces(tenant.id)
         : [];
@@ -2432,10 +2613,16 @@ function setupIPCHandlers() {
           syncService
             .syncAllToCloud(userId)
             .then((result) => {
-              log.info("[AutoSync] Sync completed. Result:", { success: result.success, syncedCount: result.syncedCount, failedCount: result.failedCount });
+              log.info("[AutoSync] Sync completed. Result:", {
+                success: result.success,
+                syncedCount: result.syncedCount,
+                failedCount: result.failedCount,
+              });
               if (result.success && mainWindow && mainWindow.webContents) {
                 // Notify renderer that auto-sync completed so it can refresh
-                log.info("[AutoSync] Sending auto-sync-completed event to renderer");
+                log.info(
+                  "[AutoSync] Sending auto-sync-completed event to renderer"
+                );
                 mainWindow.webContents.send("auto-sync-completed", {
                   userId,
                   syncedCount: result.syncedCount,
@@ -2493,9 +2680,7 @@ function setupIPCHandlers() {
 
       if (hasMetadataUpdates && issue.syncedTo && issue.syncedTo.length > 0) {
         // Update GitHub issues
-        const githubSync = issue.syncedTo.find(
-          (s) => s.platform === "github"
-        );
+        const githubSync = issue.syncedTo.find((s) => s.platform === "github");
         if (githubSync) {
           try {
             const connector = await connectorService.getConnectorById(
@@ -2531,11 +2716,15 @@ function setupIPCHandlers() {
               zohoSync.connectorId || ""
             );
             if (connector && connector.enabled) {
-              await connectorService.updateZohoBug(connector, zohoSync.externalId, {
-                title: updates.title,
-                description: updates.description,
-                tags: updates.tags,
-              });
+              await connectorService.updateZohoBug(
+                connector,
+                zohoSync.externalId,
+                {
+                  title: updates.title,
+                  description: updates.description,
+                  tags: updates.tags,
+                }
+              );
               log.info(`[Update] Zoho bug ${zohoSync.externalId} updated`);
             }
           } catch (error) {
@@ -2598,13 +2787,8 @@ function setupIPCHandlers() {
               );
               if (connector && connector.enabled) {
                 const issueNumber = parseInt(sync.externalId, 10);
-                await connectorService.closeGitHubIssue(
-                  connector,
-                  issueNumber
-                );
-                log.info(
-                  `[Delete] Closed GitHub issue #${issueNumber}`
-                );
+                await connectorService.closeGitHubIssue(connector, issueNumber);
+                log.info(`[Delete] Closed GitHub issue #${issueNumber}`);
               }
             } else if (sync.platform === "zoho") {
               // Get Zoho connector
@@ -2623,7 +2807,9 @@ function setupIPCHandlers() {
             // Log error but continue with deletion
             log.warn(
               `[Delete] Failed to delete from ${sync.platform}:`,
-              platformError instanceof Error ? platformError.message : String(platformError)
+              platformError instanceof Error
+                ? platformError.message
+                : String(platformError)
             );
           }
         }
