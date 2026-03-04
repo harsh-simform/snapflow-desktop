@@ -3,6 +3,9 @@ import path from "path";
 import electron from "electron";
 import serve from "electron-serve";
 import log from "electron-log";
+import http from "http";
+import { URL } from "url";
+import Store from "electron-store";
 import { createWindow, WindowInstance } from "./helpers";
 import { authService } from "./services/auth";
 import { issueService } from "./services/issues";
@@ -12,6 +15,8 @@ import { updaterService } from "./services/updater";
 import { syncService } from "./services/sync";
 import { tenantService } from "./services/tenant";
 import { workspaceService } from "./services/workspace";
+import { zohoService } from "./services/zoho";
+import { githubService } from "./services/github";
 import { storageManager } from "./utils/storage";
 import { sessionManager } from "./utils/session";
 import { TrayIconManager } from "./utils/tray-icon-manager";
@@ -95,6 +100,23 @@ let tray: typeof Tray.prototype | null = null;
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 let isQuitting = false;
 let pendingScreenshot: { dataUrl: string; mode: string } | null = null;
+let pendingZohoTokens: {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+  accountsServer?: string;
+  apiDomain?: string;
+} | null = null;
+let pendingGitHubTokens: {
+  accessToken: string;
+  expiresAt: number;
+} | null = null;
+
+// App settings store
+const appSettingsStore = new Store({
+  name: "snapflow-app-settings",
+  defaults: { autoSync: false },
+}) as any;
 
 // State tracking for tray actions to prevent race conditions
 let isShowingWindow = false;
@@ -1336,6 +1358,233 @@ const handleOAuthCallback = async (url: string) => {
   }
 };
 
+/**
+ * Handle Zoho OAuth callback
+ */
+const handleZohoCallback = async (url: string) => {
+  log.info("[Zoho OAuth] ========== CALLBACK HANDLER START ==========");
+  log.info("[Zoho OAuth] Full callback URL:", url);
+
+  try {
+    const parsedUrl = new URL(url);
+    log.info("[Zoho OAuth] Parsed URL pathname:", parsedUrl.pathname);
+    log.info("[Zoho OAuth] Parsed URL search:", parsedUrl.search);
+
+    const code = parsedUrl.searchParams.get("code");
+    const error = parsedUrl.searchParams.get("error");
+    const errorDescription = parsedUrl.searchParams.get("error_description");
+    const accountsServer = parsedUrl.searchParams.get("accounts-server");
+    const location = parsedUrl.searchParams.get("location");
+
+    log.info(
+      "[Zoho OAuth] Code extracted:",
+      code ? `${code.substring(0, 20)}...` : "NULL"
+    );
+    log.info("[Zoho OAuth] Error extracted:", error || "NULL");
+    log.info("[Zoho OAuth] Error description:", errorDescription || "NULL");
+    log.info("[Zoho OAuth] Accounts server:", accountsServer || "NULL");
+    log.info("[Zoho OAuth] Location:", location || "NULL");
+
+    if (error) {
+      log.warn(
+        "[Zoho OAuth] Authorization error from Zoho:",
+        error,
+        errorDescription
+      );
+      if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+        mainWindow.webContents.send(
+          "zoho-oauth-error",
+          `Authorization failed: ${error} - ${errorDescription}`
+        );
+      }
+      return;
+    }
+
+    if (!code) {
+      log.warn("[Zoho OAuth] No authorization code in callback URL");
+      if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+        mainWindow.webContents.send(
+          "zoho-oauth-error",
+          "No authorization code received"
+        );
+      }
+      return;
+    }
+
+    // Handle data center region mismatch - set the correct accounts server before token exchange
+    if (accountsServer) {
+      log.info(
+        "[Zoho OAuth] Setting Zoho service to use region-specific server:",
+        accountsServer
+      );
+      zohoService.setAccountsServer(accountsServer);
+    }
+
+    log.info("[Zoho OAuth] ✓ Code validation passed, proceeding to exchange");
+    log.info("[Zoho OAuth] Calling zohoService.exchangeCodeForTokens()");
+
+    const tokens = await zohoService.exchangeCodeForTokens(code);
+
+    log.info("[Zoho OAuth] ✓ Token exchange succeeded");
+    log.info(
+      "[Zoho OAuth] Received tokens - AccessToken length:",
+      tokens.accessToken.length
+    );
+    log.info(
+      "[Zoho OAuth] Received tokens - RefreshToken length:",
+      tokens.refreshToken.length
+    );
+    log.info("[Zoho OAuth] Received tokens - ExpiresIn:", tokens.expiresIn);
+    log.info(
+      "[Zoho OAuth] API Domain from response:",
+      tokens.apiDomain || "NOT PROVIDED"
+    );
+
+    // Update API domain if provided in token response
+    if (tokens.apiDomain) {
+      log.info("[Zoho OAuth] Updating API domain with response value");
+      zohoService.setAccountsServer(
+        accountsServer || "https://accounts.zoho.com",
+        tokens.apiDomain
+      );
+    }
+
+    // Normalize apiDomain to just the domain
+    let normalizedApiDomain = tokens.apiDomain;
+    if (normalizedApiDomain) {
+      // First, try to parse as URL if it looks like one
+      if (normalizedApiDomain.includes("://")) {
+        try {
+          const url = new URL(normalizedApiDomain);
+          normalizedApiDomain = url.hostname;
+          log.info(
+            "[Zoho OAuth] Normalized api_domain from URL to hostname:",
+            normalizedApiDomain
+          );
+        } catch (e) {
+          log.warn(
+            "[Zoho OAuth] Failed to parse api_domain as URL, using as-is:",
+            normalizedApiDomain
+          );
+        }
+      }
+
+      // Remove www. prefix if present
+      if (normalizedApiDomain && normalizedApiDomain.startsWith("www.")) {
+        normalizedApiDomain = normalizedApiDomain.replace("www.", "");
+        log.info(
+          "[Zoho OAuth] Removed www. prefix from api_domain:",
+          normalizedApiDomain
+        );
+      }
+    }
+
+    // Store tokens temporarily in memory until connector is saved
+    pendingZohoTokens = {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      expiresAt: Date.now() + tokens.expiresIn * 1000,
+      accountsServer: accountsServer || "https://accounts.zoho.com",
+      apiDomain:
+        normalizedApiDomain ||
+        (accountsServer ? accountsServer.replace("accounts.", "") : undefined),
+    };
+
+    log.info("[Zoho OAuth] ✓ Tokens stored in memory");
+    log.info(
+      "[Zoho OAuth] Stored accounts server:",
+      pendingZohoTokens.accountsServer
+    );
+    log.info("[Zoho OAuth] Stored API domain:", pendingZohoTokens.apiDomain);
+
+    // Notify renderer that OAuth is complete
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+      log.info("[Zoho OAuth] Sending 'zoho-oauth-success' event to renderer");
+      mainWindow.webContents.send("zoho-oauth-success");
+    }
+
+    log.info("[Zoho OAuth] ✓ OAuth callback handled successfully");
+    log.info("[Zoho OAuth] ========== CALLBACK HANDLER END ==========");
+  } catch (error) {
+    log.error("[Zoho OAuth] ✗ Error handling callback");
+    log.error(
+      "[Zoho OAuth] Error type:",
+      error instanceof Error ? error.constructor.name : typeof error
+    );
+    log.error(
+      "[Zoho OAuth] Error message:",
+      error instanceof Error ? error.message : String(error)
+    );
+    if (error instanceof Error && error.stack) {
+      log.error("[Zoho OAuth] Stack trace:", error.stack);
+    }
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+      const errorMsg = error instanceof Error ? error.message : "Unknown error";
+      mainWindow.webContents.send("zoho-oauth-error", errorMsg);
+    }
+    log.info("[Zoho OAuth] ========== CALLBACK HANDLER END (ERROR) ==========");
+  }
+};
+
+/**
+ * Handle GitHub OAuth callback
+ */
+const handleGitHubCallback = async (url: string) => {
+  log.info("[GitHub OAuth] Handling callback URL");
+
+  try {
+    const parsedUrl = new URL(url);
+    const code = parsedUrl.searchParams.get("code");
+    const error = parsedUrl.searchParams.get("error");
+
+    if (error) {
+      log.warn("[GitHub OAuth] Authorization error:", error);
+      if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+        mainWindow.webContents.send(
+          "github-oauth-error",
+          `Authorization failed: ${error}`
+        );
+      }
+      return;
+    }
+
+    if (!code) {
+      log.warn("[GitHub OAuth] No authorization code in callback URL");
+      if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+        mainWindow.webContents.send(
+          "github-oauth-error",
+          "No authorization code received"
+        );
+      }
+      return;
+    }
+
+    log.info("[GitHub OAuth] Exchanging authorization code for token");
+    const tokens = await githubService.exchangeCodeForToken(code);
+
+    // Store token temporarily in memory until connector is saved
+    pendingGitHubTokens = {
+      accessToken: tokens.accessToken,
+      expiresAt: Date.now() + (tokens.expiresIn || 28800) * 1000,
+    };
+
+    log.info("[GitHub OAuth] ✓ Token received and stored");
+
+    // Notify renderer that OAuth is complete
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+      mainWindow.webContents.send("github-oauth-success");
+    }
+
+    log.info("[GitHub OAuth] ✓ OAuth callback handled");
+  } catch (error) {
+    log.error("[GitHub OAuth] Error handling callback:", error.message);
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+      const errorMsg = error instanceof Error ? error.message : "Unknown error";
+      mainWindow.webContents.send("github-oauth-error", errorMsg);
+    }
+  }
+};
+
 // Request single instance lock
 if (app && app.requestSingleInstanceLock) {
   const gotTheLock = app.requestSingleInstanceLock();
@@ -1355,7 +1604,8 @@ if (app && app.requestSingleInstanceLock) {
       ]);
     }
 
-    // Handle macOS deep link (open-url event)
+    // Handle macOS deep link (open-url event) — currently only for Google OAuth
+    // Zoho and GitHub OAuth now use localhost HTTP callbacks
     app.on("open-url", (event, url) => {
       event.preventDefault();
       log.info("[Deep Link] Received deep link:", url);
@@ -1366,12 +1616,12 @@ if (app && app.requestSingleInstanceLock) {
 
     // Handle Windows/Linux second instance with command line args
     app.on("second-instance", async (_event, commandLine) => {
-      // Check if one of the command line arguments is the OAuth callback
+      // Check if one of the command line arguments is a Google OAuth callback
       const callbackUrl = commandLine.find((arg) =>
         arg.startsWith("snapflow://auth/callback")
       );
       if (callbackUrl) {
-        log.info("[Deep Link] Second instance OAuth callback detected");
+        log.info("[Deep Link] Second instance Google OAuth callback detected");
         handleOAuthCallback(callbackUrl);
       } else {
         // Regular second instance - just focus the window
@@ -1410,10 +1660,11 @@ if (app && app.requestSingleInstanceLock) {
       protocol.registerFileProtocol("snapflow", (request, callback) => {
         const rawUrl = request.url;
 
-        // Pass OAuth callback URLs through — do not try to serve them as files.
+        // Pass Google OAuth callback URLs through — do not try to serve them as files.
+        // (Zoho and GitHub OAuth now use localhost HTTP callbacks, not custom protocols)
         if (rawUrl.startsWith("snapflow://auth/")) {
           log.info(
-            "[Protocol] Skipping file-serve for OAuth callback URL:",
+            "[Protocol] Skipping file-serve for Google OAuth callback URL:",
             rawUrl
           );
           // Trigger the OAuth callback handler directly from here as a safety net,
@@ -1527,6 +1778,12 @@ if (app && app.requestSingleInstanceLock) {
       // Setup IPC handlers
       setupIPCHandlers();
 
+      // Start session expiry monitor
+      startSessionExpiryMonitor();
+
+      // Start OAuth callback server (localhost HTTP server)
+      startOAuthCallbackServer();
+
       // Create system tray
       createSystemTray();
 
@@ -1573,6 +1830,189 @@ if (app && app.on) {
     log.info("[Shortcuts] Unregistering all global shortcuts");
     globalShortcut.unregisterAll();
   });
+}
+
+// Monitor session expiry and notify renderer
+let sessionExpiryCheckInterval: NodeJS.Timeout | null = null;
+
+function startSessionExpiryMonitor() {
+  if (sessionExpiryCheckInterval) return; // Already running
+
+  sessionExpiryCheckInterval = setInterval(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+
+    const expiresAt = sessionManager.getSessionExpiryTime();
+    if (!expiresAt) return; // No session
+
+    const now = Date.now();
+    const timeUntilExpiry = expiresAt - now;
+
+    // Warn if expiring in next 30 minutes but not yet expired
+    if (timeUntilExpiry > 0 && timeUntilExpiry <= 30 * 60 * 1000) {
+      log.info(
+        "[Session] Token expiring soon (",
+        Math.round(timeUntilExpiry / 60000),
+        "minutes)"
+      );
+      mainWindow.webContents.send("session-expiring-soon", expiresAt);
+    }
+
+    // Token expired
+    if (timeUntilExpiry <= 0) {
+      log.warn("[Session] Token has expired, clearing session");
+      sessionManager
+        .clearUser()
+        .catch((err) =>
+          log.error("[Session] Error clearing expired session:", err)
+        );
+      mainWindow.webContents.send("session-expired");
+    }
+  }, 60 * 1000); // Check every minute
+
+  log.info("[Session] Session expiry monitor started");
+}
+
+function stopSessionExpiryMonitor() {
+  if (sessionExpiryCheckInterval) {
+    clearInterval(sessionExpiryCheckInterval);
+    sessionExpiryCheckInterval = null;
+    log.info("[Session] Session expiry monitor stopped");
+  }
+}
+
+// ─── OAuth Callback HTTP Server ────────────────────────────────────────────
+
+let oauthCallbackServer: http.Server | null = null;
+
+function startOAuthCallbackServer() {
+  if (oauthCallbackServer) {
+    log.info("[OAuth Server] Already running on port 3000");
+    return;
+  }
+
+  oauthCallbackServer = http.createServer((req, res) => {
+    const url = new URL(req.url || "/", "http://localhost:3000");
+    const pathname = url.pathname;
+
+    log.info("[OAuth Server] Request:", pathname);
+
+    // Handle Zoho OAuth callback
+    if (pathname === "/auth/zoho/callback") {
+      log.info("[OAuth Server] ========== ZOHO CALLBACK RECEIVED ==========");
+      log.info("[OAuth Server] Request URL:", req.url);
+      log.info(
+        "[OAuth Server] Full callback:",
+        `http://localhost:3000${req.url}`
+      );
+
+      const code = url.searchParams.get("code");
+      const error = url.searchParams.get("error");
+      const errorDescription = url.searchParams.get("error_description");
+
+      log.info(
+        "[OAuth Server] Code present:",
+        !!code,
+        code ? `(${code.substring(0, 20)}...)` : ""
+      );
+      log.info("[OAuth Server] Error present:", !!error, error || "");
+      log.info("[OAuth Server] Error description:", errorDescription || "");
+
+      if (error) {
+        log.warn(
+          "[OAuth Server] Zoho authorization error:",
+          error,
+          errorDescription
+        );
+        res.writeHead(400, { "Content-Type": "text/html" });
+        res.end(
+          `<html><body><h1>Authorization Failed</h1><p>${error}</p></body></html>`
+        );
+        return;
+      }
+
+      if (!code) {
+        log.warn("[OAuth Server] No code in Zoho callback");
+        res.writeHead(400, { "Content-Type": "text/html" });
+        res.end(
+          `<html><body><h1>Authorization Failed</h1><p>No authorization code received</p></body></html>`
+        );
+        return;
+      }
+
+      log.info("[OAuth Server] ✓ Zoho callback validation passed");
+      log.info("[OAuth Server] Triggering handleZohoCallback async handler");
+      // Trigger the Zoho handler with the full URL
+      const fullUrl = `http://localhost:3000${req.url}`;
+      handleZohoCallback(fullUrl).catch((err) => {
+        log.error(
+          "[OAuth Server] handleZohoCallback threw error:",
+          err.message
+        );
+      });
+
+      // Send success page to browser
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end(
+        `<html><body><h1>Authorization Successful</h1><p>You can close this window and return to SnapFlow.</p></body></html>`
+      );
+      return;
+    }
+
+    // Handle GitHub OAuth callback
+    if (pathname === "/auth/github/callback") {
+      const code = url.searchParams.get("code");
+      const error = url.searchParams.get("error");
+
+      if (error) {
+        log.warn("[OAuth Server] GitHub error:", error);
+        res.writeHead(400, { "Content-Type": "text/html" });
+        res.end(
+          `<html><body><h1>Authorization Failed</h1><p>${error}</p></body></html>`
+        );
+        return;
+      }
+
+      if (!code) {
+        log.warn("[OAuth Server] No code in GitHub callback");
+        res.writeHead(400, { "Content-Type": "text/html" });
+        res.end(
+          `<html><body><h1>Authorization Failed</h1><p>No authorization code received</p></body></html>`
+        );
+        return;
+      }
+
+      log.info("[OAuth Server] GitHub callback received with code");
+      // Trigger the GitHub handler with the full URL
+      handleGitHubCallback(`http://localhost:3000${req.url}`);
+
+      // Send success page to browser
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end(
+        `<html><body><h1>Authorization Successful</h1><p>You can close this window and return to SnapFlow.</p></body></html>`
+      );
+      return;
+    }
+
+    // 404 for unknown paths
+    res.writeHead(404, { "Content-Type": "text/html" });
+    res.end(`<html><body><h1>Not Found</h1></body></html>`);
+  });
+
+  oauthCallbackServer.listen(3000, "localhost", () => {
+    log.info("[OAuth Server] ✓ Listening on http://localhost:3000");
+  });
+
+  oauthCallbackServer.on("error", (err) => {
+    log.error("[OAuth Server] Error:", err);
+  });
+}
+
+function stopOAuthCallbackServer() {
+  if (oauthCallbackServer) {
+    oauthCallbackServer.close();
+    oauthCallbackServer = null;
+    log.info("[OAuth Server] Stopped");
+  }
 }
 
 // Setup IPC Handlers function
@@ -1640,6 +2080,10 @@ function setupIPCHandlers() {
     }
   });
 
+  ipcMain.handle("session:is-initialized", () => {
+    return { success: true, data: sessionManager.isInitialized() };
+  });
+
   ipcMain.handle(
     "user:update",
     async (
@@ -1673,6 +2117,47 @@ function setupIPCHandlers() {
       return { success: false, error: errorMessage };
     }
   });
+
+  ipcMain.handle("user:get-session-expiry", () => {
+    try {
+      const expiresAt = sessionManager.getSessionExpiryTime();
+      if (!expiresAt) {
+        return { success: true, data: { expiresAt: null, expiresIn: null } };
+      }
+      const expiresIn = Math.max(0, expiresAt - Date.now());
+      return {
+        success: true,
+        data: {
+          expiresAt,
+          expiresIn,
+          expiresAtDate: new Date(expiresAt).toISOString(),
+        },
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      log.error("Get session expiry error:", error);
+      return { success: false, error: errorMessage };
+    }
+  });
+
+  ipcMain.handle(
+    "user:is-session-expiring-soon",
+    (_, { minutesBuffer = 30 } = {}) => {
+      try {
+        const expiringSoon =
+          sessionManager.isSessionExpiringsoon(minutesBuffer);
+        return { success: true, data: { expiringSoon } };
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : "An unexpected error occurred";
+        log.error("Check session expiry error:", error);
+        return { success: false, error: errorMessage };
+      }
+    }
+  );
 
   ipcMain.handle("user:google-signin", async () => {
     try {
@@ -1871,6 +2356,16 @@ function setupIPCHandlers() {
           description,
           thumbnailPath
         );
+
+        // Trigger auto-sync to cloud if enabled (fire-and-forget)
+        if (appSettingsStore.get("autoSync")) {
+          syncService
+            .syncAllToCloud(userId)
+            .catch((err) =>
+              log.warn("[AutoSync] Background cloud sync failed:", err.message)
+            );
+        }
+
         return { success: true, data: issue };
       } catch (error) {
         const errorMessage =
@@ -1898,6 +2393,16 @@ function setupIPCHandlers() {
   ipcMain.handle("issue:update", async (_event, { issueId, updates }) => {
     try {
       const issue = await issueService.updateIssue(issueId, updates);
+
+      // Trigger auto-sync to cloud if enabled (fire-and-forget)
+      if (appSettingsStore.get("autoSync")) {
+        syncService
+          .syncAllToCloud(issue.userId)
+          .catch((err) =>
+            log.warn("[AutoSync] Background cloud sync failed:", err.message)
+          );
+      }
+
       return { success: true, data: issue };
     } catch (error) {
       const errorMessage =
@@ -2295,11 +2800,87 @@ function setupIPCHandlers() {
         if (!user) {
           throw new Error("User not authenticated");
         }
-        const newConnector = await connectorService.addConnector(
+        let newConnector = await connectorService.addConnector(
           user.id,
           workspaceId,
           connector
         );
+
+        // If this is a GitHub connector and we have pending tokens, update the connector
+        if (connector.type === "github") {
+          log.info("[Connector:Add] GitHub connector created");
+          log.info(
+            "[Connector:Add] Incoming connector token:",
+            connector.config?.accessToken ? "present" : "empty"
+          );
+          log.info(
+            "[Connector:Add] Pending GitHub tokens exist:",
+            !!pendingGitHubTokens
+          );
+
+          if (pendingGitHubTokens) {
+            log.info("[Connector:Add] Updating connector with pending tokens");
+            newConnector = await connectorService.updateConnector(
+              newConnector.id,
+              {
+                config: {
+                  ...newConnector.config,
+                  accessToken: pendingGitHubTokens.accessToken,
+                },
+              }
+            );
+            // Clear pending tokens
+            pendingGitHubTokens = null;
+            log.info(
+              "[Connector:Add] Connector updated and pending tokens cleared"
+            );
+          } else {
+            log.warn(
+              "[Connector:Add] No pending tokens, connector has token from renderer:",
+              !!connector.config?.accessToken
+            );
+          }
+        }
+
+        // If this is a Zoho connector and we have pending tokens, update the connector
+        if (connector.type === "zoho") {
+          log.info("[Connector:Add] Zoho connector created");
+          log.info(
+            "[Connector:Add] Incoming connector token:",
+            connector.config?.accessToken ? "present" : "empty"
+          );
+          log.info(
+            "[Connector:Add] Pending Zoho tokens exist:",
+            !!pendingZohoTokens
+          );
+
+          if (pendingZohoTokens) {
+            log.info("[Connector:Add] Updating connector with pending tokens");
+            newConnector = await connectorService.updateConnector(
+              newConnector.id,
+              {
+                config: {
+                  ...newConnector.config,
+                  accessToken: pendingZohoTokens.accessToken,
+                  refreshToken: pendingZohoTokens.refreshToken,
+                  apiDomain: pendingZohoTokens.apiDomain,
+                  accountsServer: pendingZohoTokens.accountsServer,
+                },
+              }
+            );
+            // Clear pending tokens
+            pendingZohoTokens = null;
+            log.info(
+              "[Connector:Add] Connector updated and pending tokens cleared"
+            );
+          } else {
+            log.warn(
+              "[Connector:Add] No pending tokens, connector has token from renderer:",
+              !!connector.config?.accessToken
+            );
+          }
+        }
+
         return { success: true, data: newConnector };
       } catch (error) {
         const errorMessage =
@@ -2391,6 +2972,66 @@ function setupIPCHandlers() {
     }
   });
 
+  // Sync handler - Zoho
+  ipcMain.handle(
+    "sync:issue-zoho",
+    async (_event, { issueId, connectorId }) => {
+      try {
+        const user = sessionManager.getUser();
+        if (!user) {
+          throw new Error("User not authenticated");
+        }
+
+        const issue = await issueService.getIssueById(issueId);
+        if (!issue) {
+          throw new Error("Issue not found");
+        }
+
+        const connector = await connectorService.getConnectorById(connectorId);
+        if (!connector || connector.type !== "zoho" || !connector.enabled) {
+          throw new Error("Zoho connector not found or disabled");
+        }
+
+        await issueService.updateSyncStatus(issueId, "syncing");
+
+        const result = await connectorService.syncToZoho(connector, {
+          title: issue.title,
+          description: issue.description,
+          filePath: issue.filePath,
+          cloudFileUrl: issue.cloudFileUrl,
+          syncedTo: issue.syncedTo,
+          tags: issue.tags,
+          type: issue.type,
+        });
+
+        await issueService.updateSyncStatus(issueId, "synced", {
+          platform: "zoho",
+          externalId: result.bugId,
+          url: result.url,
+          connectorId,
+        });
+
+        return {
+          success: true,
+          data: {
+            ...result,
+            message: result.isUpdate
+              ? "Zoho bug already exists"
+              : "Zoho bug created successfully",
+          },
+        };
+      } catch (error) {
+        await issueService.updateSyncStatus(issueId, "failed");
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : "An unexpected error occurred";
+        log.error("IPC Handler error:", error);
+        return { success: false, error: errorMessage };
+      }
+    }
+  );
+
   // Sync handler - Cloud (Supabase)
   ipcMain.handle("sync:to-cloud", async (_event, { userId }) => {
     try {
@@ -2440,6 +3081,37 @@ function setupIPCHandlers() {
     }
   });
 
+  // Settings handlers
+  ipcMain.handle("settings:get-auto-sync", async () => {
+    try {
+      const autoSync = appSettingsStore.get("autoSync");
+      return { success: true, data: autoSync };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      log.error("IPC Handler error:", error);
+      return { success: false, error: errorMessage };
+    }
+  });
+
+  ipcMain.handle(
+    "settings:set-auto-sync",
+    async (_event, { enabled }: { enabled: boolean }) => {
+      try {
+        appSettingsStore.set("autoSync", enabled);
+        log.info("[Settings] Auto-sync setting updated to:", enabled);
+        return { success: true };
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : "An unexpected error occurred";
+        log.error("IPC Handler error:", error);
+        return { success: false, error: errorMessage };
+      }
+    }
+  );
+
   // Validate GitHub connector
   ipcMain.handle(
     "connector:validate-github",
@@ -2482,6 +3154,212 @@ function setupIPCHandlers() {
       }
     }
   );
+
+  // Zoho OAuth Sign In
+  ipcMain.handle("connector:zoho-signin", async () => {
+    log.info("[Zoho OAuth] IPC Handler: connector:zoho-signin called");
+    try {
+      log.info("[Zoho OAuth] Generating authorization URL");
+      const url = zohoService.getAuthUrl();
+      log.info("[Zoho OAuth] ✓ Auth URL generated, length:", url.length);
+      log.info("[Zoho OAuth] Opening browser to OAuth consent screen");
+      await shell.openExternal(url);
+      log.info("[Zoho OAuth] ✓ Browser opened successfully");
+      return { success: true };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      log.error("[Zoho OAuth] ✗ IPC Handler error:", error);
+      log.error("[Zoho OAuth] Error message:", errorMessage);
+      return { success: false, error: errorMessage };
+    }
+  });
+
+  // Get Zoho Portals
+  ipcMain.handle("connector:get-zoho-portals", async () => {
+    try {
+      if (!pendingZohoTokens) {
+        return {
+          success: false,
+          error: "No pending Zoho authorization. Please sign in first.",
+        };
+      }
+
+      // Configure Zoho service with region info before making API calls
+      if (pendingZohoTokens.accountsServer || pendingZohoTokens.apiDomain) {
+        const accountsServerUrl =
+          pendingZohoTokens.accountsServer ||
+          `https://accounts.${pendingZohoTokens.apiDomain}`;
+        zohoService.setAccountsServer(
+          accountsServerUrl,
+          pendingZohoTokens.apiDomain
+        );
+      }
+
+      const portals = await zohoService.getPortals(
+        pendingZohoTokens.accessToken
+      );
+      return { success: true, data: portals };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      log.error("[Zoho Portals] IPC Handler error:", error);
+      return { success: false, error: errorMessage };
+    }
+  });
+
+  // Get Zoho Projects for a Portal
+  ipcMain.handle(
+    "connector:get-zoho-projects",
+    async (_event, { portalId }) => {
+      try {
+        if (!pendingZohoTokens) {
+          return {
+            success: false,
+            error: "No pending Zoho authorization. Please sign in first.",
+          };
+        }
+
+        // Configure Zoho service with region info before making API calls
+        if (pendingZohoTokens.accountsServer || pendingZohoTokens.apiDomain) {
+          const accountsServerUrl =
+            pendingZohoTokens.accountsServer ||
+            `https://accounts.${pendingZohoTokens.apiDomain}`;
+          zohoService.setAccountsServer(
+            accountsServerUrl,
+            pendingZohoTokens.apiDomain
+          );
+        }
+
+        const projects = await zohoService.getProjects(
+          pendingZohoTokens.accessToken,
+          portalId
+        );
+        return { success: true, data: projects };
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : "An unexpected error occurred";
+        log.error("[Zoho Projects] IPC Handler error:", error);
+        return { success: false, error: errorMessage };
+      }
+    }
+  );
+
+  // GitHub OAuth Sign In
+  ipcMain.handle("connector:github-signin", async () => {
+    try {
+      const url = githubService.getAuthUrl();
+      await shell.openExternal(url);
+      return { success: true };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      log.error("[GitHub OAuth] IPC Handler error:", error);
+      return { success: false, error: errorMessage };
+    }
+  });
+
+  // Get GitHub Repositories
+  ipcMain.handle("connector:get-github-repos", async () => {
+    try {
+      if (!pendingGitHubTokens) {
+        return {
+          success: false,
+          error: "No pending GitHub authorization. Please sign in first.",
+        };
+      }
+
+      const repos = await githubService.getRepositories(
+        pendingGitHubTokens.accessToken
+      );
+      return { success: true, data: repos };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      log.error("[GitHub Repositories] IPC Handler error:", error);
+      return { success: false, error: errorMessage };
+    }
+  });
+
+  // Get GitHub Current User
+  ipcMain.handle("connector:get-github-user", async () => {
+    try {
+      if (!pendingGitHubTokens) {
+        return {
+          success: false,
+          error: "No pending GitHub authorization. Please sign in first.",
+        };
+      }
+
+      const user = await githubService.getCurrentUser(
+        pendingGitHubTokens.accessToken
+      );
+      return { success: true, data: user };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      log.error("[GitHub User] IPC Handler error:", error);
+      return { success: false, error: errorMessage };
+    }
+  });
+
+  // Get GitHub Access Token
+  ipcMain.handle("connector:get-github-token", async () => {
+    try {
+      log.info("[GitHub Token] Request to get GitHub access token");
+      log.info(
+        "[GitHub Token] pendingGitHubTokens exists:",
+        !!pendingGitHubTokens
+      );
+
+      if (!pendingGitHubTokens) {
+        log.warn("[GitHub Token] No pending GitHub tokens available");
+        return {
+          success: false,
+          error: "No pending GitHub authorization. Please sign in first.",
+        };
+      }
+
+      log.info("[GitHub Token] Returning access token");
+      return { success: true, accessToken: pendingGitHubTokens.accessToken };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      log.error("[GitHub Token] IPC Handler error:", error);
+      return { success: false, error: errorMessage };
+    }
+  });
+
+  // Get Zoho Access Token
+  ipcMain.handle("connector:get-zoho-token", async () => {
+    try {
+      log.info("[Zoho Token] Request to get Zoho access token");
+      log.info("[Zoho Token] pendingZohoTokens exists:", !!pendingZohoTokens);
+
+      if (!pendingZohoTokens) {
+        log.warn("[Zoho Token] No pending Zoho tokens available");
+        return {
+          success: false,
+          error: "No pending Zoho authorization. Please sign in first.",
+        };
+      }
+
+      log.info("[Zoho Token] Returning Zoho tokens");
+      return {
+        success: true,
+        accessToken: pendingZohoTokens.accessToken,
+        refreshToken: pendingZohoTokens.refreshToken,
+        apiDomain: pendingZohoTokens.apiDomain,
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      log.error("[Zoho Token] IPC Handler error:", error);
+      return { success: false, error: errorMessage };
+    }
+  });
 
   // Note: Database configuration handlers removed - Supabase config is now via environment variables
 
