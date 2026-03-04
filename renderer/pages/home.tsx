@@ -39,9 +39,9 @@ export default function HomePage() {
   const [filter, setFilter] = useState<"all" | "screenshot" | "recording">(
     "all"
   );
-  const [statusFilter, setStatusFilter] = useState<"all" | "local" | "synced">(
-    "all"
-  );
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | "cloud" | "github" | "zoho"
+  >("all");
   const [sortBy, setSortBy] = useState<"date" | "name">("date");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [searchQuery, setSearchQuery] = useState("");
@@ -57,6 +57,23 @@ export default function HomePage() {
 
   useEffect(() => {
     loadData();
+  }, []);
+
+  // Listen for auto-sync completion and refresh issues
+  useEffect(() => {
+    const unsubscribe = window.api.onAutoSyncCompleted(async (data) => {
+      console.log("[Home] Auto-sync completed, reloading issues...", data);
+      // Reload issues from local storage to get updated sync status
+      const issuesResult = await window.api.listIssues(data.userId);
+      if (issuesResult.success) {
+        setIssues(issuesResult.data || []);
+        console.log("[Home] Issues reloaded after auto-sync");
+      }
+    });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
   const loadData = async () => {
@@ -222,10 +239,20 @@ export default function HomePage() {
   const filteredIssues = issues
     .filter((issue) => {
       const matchesFilter = filter === "all" || issue.type === filter;
+
+      // Determine sync status for filtering
+      const isCloudSynced = issue.syncStatus === "synced"; // Synced to Supabase
+      const hasGitHubSync = issue.syncedTo?.some(
+        (s) => s.platform === "github"
+      );
+      const hasZohoSync = issue.syncedTo?.some((s) => s.platform === "zoho");
+
       const matchesStatusFilter =
         statusFilter === "all" ||
-        (statusFilter === "local" && issue.syncStatus === "local") ||
-        (statusFilter === "synced" && issue.syncStatus === "synced");
+        (statusFilter === "cloud" && isCloudSynced) ||
+        (statusFilter === "github" && hasGitHubSync) ||
+        (statusFilter === "zoho" && hasZohoSync);
+
       const matchesSearch =
         searchQuery === "" ||
         issue.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -273,15 +300,29 @@ export default function HomePage() {
       (sync) => sync.platform === "github"
     );
 
-    if (issue.syncStatus === "syncing") {
-      return <Badge variant="warning">Syncing...</Badge>;
-    }
-
     if (githubSync) {
-      return <Badge variant="success">GitHub Synced</Badge>;
+      return <Badge variant="success">🐙 GitHub</Badge>;
     }
 
-    return <Badge variant="gray">Not Synced</Badge>;
+    return null;
+  };
+
+  const getZohoSyncBadge = (issue: Issue) => {
+    const zohoSync = issue.syncedTo?.find((sync) => sync.platform === "zoho");
+
+    if (zohoSync) {
+      return <Badge variant="info">📊 Zoho</Badge>;
+    }
+
+    return null;
+  };
+
+  const getCloudSyncBadge = (issue: Issue) => {
+    if (issue.syncStatus === "synced") {
+      return <Badge variant="primary">☁️ Cloud</Badge>;
+    }
+
+    return null;
   };
 
   // GitHub Sync Modal Dialog Component
@@ -379,6 +420,7 @@ export default function HomePage() {
           size="sm"
           onClick={() => handleSync(issue, connector.id)}
           disabled={issue.syncStatus === "syncing" || isAlreadySynced}
+          isLoading={issue.syncStatus === "syncing"}
           className={className}
           title={
             isAlreadySynced
@@ -416,6 +458,7 @@ export default function HomePage() {
           size="sm"
           onClick={() => setIsOpen(true)}
           disabled={issue.syncStatus === "syncing"}
+          isLoading={issue.syncStatus === "syncing"}
           className={className}
           title="Sync to GitHub repository"
         >
@@ -438,7 +481,10 @@ export default function HomePage() {
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.2 }}
                     className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9998]"
-                    onClick={() => setIsOpen(false)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsOpen(false);
+                    }}
                   />
 
                   {/* Modal */}
@@ -507,7 +553,8 @@ export default function HomePage() {
                                 initial={{ opacity: 0, y: 10 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ delay: index * 0.05 }}
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   if (!isAlreadySynced) {
                                     handleSelectRepository(connector.id);
                                   }
@@ -641,6 +688,268 @@ export default function HomePage() {
           )}
       </>
     );
+  };
+
+  const ZohoSyncDropdown = ({
+    issue,
+    workspaceId: dropdownWorkspaceId,
+    className = "",
+  }: {
+    issue: Issue;
+    workspaceId: string;
+    className?: string;
+  }) => {
+    const [connectors, setConnectors] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [isOpen, setIsOpen] = useState(false);
+
+    useEffect(() => {
+      loadConnectors();
+    }, []);
+
+    const loadConnectors = async () => {
+      try {
+        const result = await window.api.listConnectors(dropdownWorkspaceId);
+        if (result.success) {
+          const zohoConnectors = (result.data || []).filter(
+            (c: any) => c.type === "zoho" && c.enabled
+          );
+          setConnectors(zohoConnectors);
+        }
+      } catch (error) {
+        console.error("Failed to load connectors:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    // Get the connector this issue is currently synced to
+    const syncedConnector = issue.syncedTo?.find(
+      (sync) => sync.platform === "zoho"
+    );
+    const syncedConnectorId = syncedConnector?.connectorId;
+
+    const handleSelectConnector = (connectorId: string) => {
+      handleZohoSync(issue, connectorId);
+      setIsOpen(false);
+    };
+
+    if (loading) {
+      return (
+        <Button variant="ghost" size="sm" disabled className={className}>
+          <svg
+            className="w-4 h-4 animate-spin"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+            />
+          </svg>
+        </Button>
+      );
+    }
+
+    if (connectors.length === 0) {
+      return (
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled
+          className={className}
+          title="No Zoho projects configured. Go to Settings to add one."
+        >
+          <svg
+            className="w-4 h-4 text-orange-500 opacity-50"
+            fill="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <text x="2" y="18" fontSize="20" fontWeight="bold">
+              Z
+            </text>
+          </svg>
+        </Button>
+      );
+    }
+
+    if (connectors.length === 1) {
+      const connector = connectors[0];
+      const isAlreadySynced = syncedConnectorId === connector.id;
+
+      return (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => handleSelectConnector(connector.id)}
+          disabled={issue.syncStatus === "syncing" || isAlreadySynced}
+          isLoading={issue.syncStatus === "syncing"}
+          className={className}
+          title={
+            isAlreadySynced
+              ? `Already synced to ${connector.config?.projectName || connector.name}`
+              : `Sync to ${connector.config?.projectName || connector.name}`
+          }
+        >
+          <svg
+            className="w-4 h-4 text-orange-500"
+            fill="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <text x="2" y="18" fontSize="20" fontWeight="bold">
+              Z
+            </text>
+          </svg>
+          {isAlreadySynced && (
+            <svg
+              className="w-3 h-3 text-green-400 ml-1"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M5 13l4 4L19 7"
+              />
+            </svg>
+          )}
+        </Button>
+      );
+    }
+
+    // Modal for Multiple Connectors
+    return (
+      <>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setIsOpen(true)}
+          disabled={issue.syncStatus === "syncing"}
+          isLoading={issue.syncStatus === "syncing"}
+          className={className}
+          title="Sync to Zoho project"
+        >
+          <svg
+            className="w-4 h-4 text-orange-500"
+            fill="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <text x="2" y="18" fontSize="20" fontWeight="bold">
+              Z
+            </text>
+          </svg>
+        </Button>
+
+        {/* Modal Dialog */}
+        {typeof window !== "undefined" &&
+          createPortal(
+            <AnimatePresence mode="wait">
+              {isOpen && (
+                <>
+                  <motion.div
+                    key="backdrop"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsOpen(false);
+                    }}
+                    className="fixed inset-0 bg-black/50 z-40"
+                  />
+                  <div className="fixed inset-0 flex items-center justify-center z-50">
+                    <motion.div
+                      key="modal"
+                      initial={{ scale: 0.95, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      exit={{ scale: 0.95, opacity: 0 }}
+                      className="bg-gray-900 border border-gray-700 rounded-lg p-6 max-w-sm mx-4"
+                    >
+                      <h3 className="text-lg font-semibold text-gray-100 mb-4">
+                        Select Zoho Project
+                      </h3>
+                      <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {connectors.map((connector) => {
+                          const isAlreadySynced =
+                            syncedConnectorId === connector.id;
+                          return (
+                            <button
+                              key={connector.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSelectConnector(connector.id);
+                              }}
+                              disabled={isAlreadySynced}
+                              className={`w-full text-left px-4 py-3 rounded-lg transition-colors ${
+                                isAlreadySynced
+                                  ? "bg-green-500/20 text-green-400 cursor-default border border-green-500/30"
+                                  : "bg-gray-800/50 hover:bg-gray-800 text-gray-100 border border-gray-700"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <div className="font-medium">
+                                    {connector.config?.projectName ||
+                                      connector.name}
+                                  </div>
+                                  <div className="text-xs text-gray-400">
+                                    {connector.config?.portalName || "Portal"}
+                                  </div>
+                                </div>
+                                {isAlreadySynced && (
+                                  <svg
+                                    className="w-4 h-4 text-green-400"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M5 13l4 4L19 7"
+                                    />
+                                  </svg>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </motion.div>
+                  </div>
+                </>
+              )}
+            </AnimatePresence>,
+            document.body
+          )}
+      </>
+    );
+  };
+
+  const handleZohoSync = async (issue: Issue, connectorId: string) => {
+    updateIssue(issue.id, { syncStatus: "syncing" });
+    const toastId = toast.loading("Syncing to Zoho...");
+    try {
+      const result = await window.api.syncIssueToZoho(issue.id, connectorId);
+      toast.dismiss(toastId);
+      if (result.success) {
+        toast.success("Synced to Zoho!");
+        loadData();
+      } else {
+        toast.error(result.error || "Sync failed");
+        updateIssue(issue.id, { syncStatus: "failed" });
+      }
+    } catch (error) {
+      toast.dismiss(toastId);
+      toast.error(error instanceof Error ? error.message : "Sync failed");
+      updateIssue(issue.id, { syncStatus: "failed" });
+    }
   };
 
   const handleLogout = async () => {
@@ -889,18 +1198,26 @@ export default function HomePage() {
                 </span>
                 <FilterBar
                   options={[
-                    { id: "all", label: "All", count: filteredIssues.length },
+                    { id: "all", label: "All", count: issues.length },
                     {
-                      id: "local",
-                      label: "Local",
-                      count: issues.filter((i) => i.syncStatus === "local")
+                      id: "cloud",
+                      label: "Cloud Sync",
+                      count: issues.filter((i) => i.syncStatus === "synced")
                         .length,
                     },
                     {
-                      id: "synced",
-                      label: "Synced",
-                      count: issues.filter((i) => i.syncStatus === "synced")
-                        .length,
+                      id: "github",
+                      label: "GitHub Sync",
+                      count: issues.filter((i) =>
+                        i.syncedTo?.some((s) => s.platform === "github")
+                      ).length,
+                    },
+                    {
+                      id: "zoho",
+                      label: "Zoho Sync",
+                      count: issues.filter((i) =>
+                        i.syncedTo?.some((s) => s.platform === "zoho")
+                      ).length,
                     },
                   ]}
                   activeFilter={statusFilter}
@@ -908,7 +1225,7 @@ export default function HomePage() {
                     setStatusFilter(filterId as any)
                   }
                   variant="pills"
-                  showCounts={false}
+                  showCounts={true}
                 />
               </div>
 
@@ -1176,13 +1493,25 @@ export default function HomePage() {
                         )}
 
                         {/* Sync Status and Actions */}
-                        <div className="flex items-center justify-between mt-auto">
-                          <div className="flex-shrink-0">
+                        <div className="flex items-center justify-between mt-auto gap-2">
+                          <div className="flex items-center gap-1 flex-wrap">
+                            {getCloudSyncBadge(issue)}
                             {getGitHubSyncBadge(issue)}
+                            {getZohoSyncBadge(issue)}
+                            {!getCloudSyncBadge(issue) &&
+                              !getGitHubSyncBadge(issue) &&
+                              !getZohoSyncBadge(issue) && (
+                                <Badge variant="gray">Local</Badge>
+                              )}
                           </div>
 
                           <div className="flex items-center space-x-0.5">
                             <GitHubSyncDropdown
+                              issue={issue}
+                              workspaceId={workspaceId}
+                              className="hover:bg-gray-800"
+                            />
+                            <ZohoSyncDropdown
                               issue={issue}
                               workspaceId={workspaceId}
                               className="hover:bg-gray-800"
@@ -1616,6 +1945,13 @@ export default function HomePage() {
                           issue={previewIssue}
                           workspaceId={workspaceId}
                           className="w-full justify-center text-xs h-9 bg-blue-600 hover:bg-blue-700 text-white"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <ZohoSyncDropdown
+                          issue={previewIssue}
+                          workspaceId={workspaceId}
+                          className="w-full justify-center text-xs h-9 bg-orange-600 hover:bg-orange-700 text-white"
                         />
                       </div>
                       <Button

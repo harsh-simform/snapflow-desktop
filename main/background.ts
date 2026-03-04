@@ -2361,6 +2361,15 @@ function setupIPCHandlers() {
         if (appSettingsStore.get("autoSync")) {
           syncService
             .syncAllToCloud(userId)
+            .then((result) => {
+              if (result.success && mainWindow && mainWindow.webContents) {
+                // Notify renderer that auto-sync completed so it can refresh
+                mainWindow.webContents.send("auto-sync-completed", {
+                  userId,
+                  syncedCount: result.syncedCount,
+                });
+              }
+            })
             .catch((err) =>
               log.warn("[AutoSync] Background cloud sync failed:", err.message)
             );
@@ -2398,6 +2407,15 @@ function setupIPCHandlers() {
       if (appSettingsStore.get("autoSync")) {
         syncService
           .syncAllToCloud(issue.userId)
+          .then((result) => {
+            if (result.success && mainWindow && mainWindow.webContents) {
+              // Notify renderer that auto-sync completed so it can refresh
+              mainWindow.webContents.send("auto-sync-completed", {
+                userId: issue.userId,
+                syncedCount: result.syncedCount,
+              });
+            }
+          })
           .catch((err) =>
             log.warn("[AutoSync] Background cloud sync failed:", err.message)
           );
