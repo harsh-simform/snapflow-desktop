@@ -43,18 +43,59 @@ export default function OnboardingPage() {
   const [workspaceSlug, setWorkspaceSlug] = useState("");
 
   // Step 4: Connectors
-  const [githubToken, setGithubToken] = useState("");
-  const [githubOwner, setGithubOwner] = useState("");
-  const [githubRepo, setGithubRepo] = useState("");
-  const [githubValidating, setGithubValidating] = useState(false);
-  const [githubValid, setGithubValid] = useState(false);
+  // GitHub OAuth state
+  type GitHubOAuthStage = "idle" | "waiting" | "selecting" | "saving";
+  interface GitHubRepo {
+    id: number;
+    name: string;
+    full_name: string;
+    owner: { login: string };
+  }
+  interface GitHubUser {
+    login: string;
+    name?: string;
+    avatar_url?: string;
+  }
+  const [githubOAuthStage, setGitHubOAuthStage] = useState<GitHubOAuthStage>("idle");
+  const [githubUser, setGitHubUser] = useState<GitHubUser | null>(null);
+  const [githubRepos, setGitHubRepos] = useState<GitHubRepo[]>([]);
+  const [githubSelectedRepoId, setGitHubSelectedRepoId] = useState(0);
+  const [githubSelectedRepoName, setGitHubSelectedRepoName] = useState("");
+  const [githubSelectedRepoFullName, setGitHubSelectedRepoFullName] = useState("");
+  const [githubConnectorName, setGitHubConnectorName] = useState("");
+  const [githubOAuthError, setGitHubOAuthError] = useState("");
 
-  const [zohoToken, setZohoToken] = useState("");
-  const [zohoPortalId, setZohoPortalId] = useState("");
-  const [zohoValidating, setZohoValidating] = useState(false);
-  const [zohoValid, setZohoValid] = useState(false);
+  // Zoho OAuth state
+  type ZohoOAuthStage = "idle" | "waiting" | "selecting" | "saving";
+  interface ZohoPortal {
+    id: string;
+    name: string;
+  }
+  interface ZohoProject {
+    id_string: string;
+    name: string;
+  }
+  const [zohoOAuthStage, setZohoOAuthStage] = useState<ZohoOAuthStage>("idle");
+  const [zohoPortals, setZohoPortals] = useState<ZohoPortal[]>([]);
+  const [zohoProjects, setZohoProjects] = useState<ZohoProject[]>([]);
+  const [zohoSelectedPortalId, setZohoSelectedPortalId] = useState("");
+  const [zohoSelectedPortalName, setZohoSelectedPortalName] = useState("");
+  const [zohoSelectedProjectId, setZohoSelectedProjectId] = useState("");
+  const [zohoSelectedProjectName, setZohoSelectedProjectName] = useState("");
+  const [zohoConnectorName, setZohoConnectorName] = useState("");
+  const [zohoOAuthError, setZohoOAuthError] = useState("");
 
   const [connectorAddedType, setConnectorAddedType] = useState<string>("");
+
+  // Helper to update step and persist to DB
+  async function updateStep(newStep: number) {
+    setStep(newStep);
+    try {
+      await window.api.setOnboardingStep(newStep);
+    } catch (err) {
+      console.error("Error persisting onboarding step:", err);
+    }
+  }
 
   // Load initial onboarding status
   useEffect(() => {
@@ -89,6 +130,77 @@ export default function OnboardingPage() {
     loadStatus();
   }, [router]);
 
+  // Listen for Zoho OAuth success
+  useEffect(() => {
+    const unsubscribe = window.api.onZohoOAuthSuccess(async () => {
+      console.log("[Onboarding] Zoho OAuth success");
+      try {
+        const result = await window.api.getZohoPortals();
+        if (result.success) {
+          setZohoPortals(result.data || []);
+          setZohoOAuthStage("selecting");
+          setZohoOAuthError("");
+        } else {
+          setZohoOAuthError(result.error || "Failed to fetch portals");
+          setZohoOAuthStage("idle");
+        }
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        setZohoOAuthError(msg);
+        setZohoOAuthStage("idle");
+      }
+    });
+    return unsubscribe;
+  }, []);
+
+  // Listen for Zoho OAuth error
+  useEffect(() => {
+    const unsubscribe = window.api.onZohoOAuthError((error: string) => {
+      console.log("[Onboarding] Zoho OAuth error:", error);
+      setZohoOAuthError(error);
+      setZohoOAuthStage("idle");
+    });
+    return unsubscribe;
+  }, []);
+
+  // Listen for GitHub OAuth success
+  useEffect(() => {
+    const unsubscribe = window.api.onGitHubOAuthSuccess(async () => {
+      console.log("[Onboarding] GitHub OAuth success");
+      try {
+        const userResult = await window.api.getGitHubUser();
+        const reposResult = await window.api.getGitHubRepositories();
+
+        if (userResult.success && reposResult.success) {
+          setGitHubUser(userResult.data || null);
+          setGitHubRepos(reposResult.data || []);
+          setGitHubOAuthStage("selecting");
+          setGitHubOAuthError("");
+        } else {
+          setGitHubOAuthError(
+            userResult.error || reposResult.error || "Failed to fetch data"
+          );
+          setGitHubOAuthStage("idle");
+        }
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        setGitHubOAuthError(msg);
+        setGitHubOAuthStage("idle");
+      }
+    });
+    return unsubscribe;
+  }, []);
+
+  // Listen for GitHub OAuth error
+  useEffect(() => {
+    const unsubscribe = window.api.onGitHubOAuthError((error: string) => {
+      console.log("[Onboarding] GitHub OAuth error:", error);
+      setGitHubOAuthError(error);
+      setGitHubOAuthStage("idle");
+    });
+    return unsubscribe;
+  }, []);
+
   // Handle tenant creation
   async function handleCreateTenant() {
     if (!tenantName.trim()) {
@@ -112,7 +224,7 @@ export default function OnboardingPage() {
       const newTenant = result.data as Tenant;
       setTenant(newTenant);
       toast.success("Organization created successfully!");
-      setStep(2);
+      await updateStep(2);
     } catch (err) {
       console.error("Error creating tenant:", err);
       setError("Failed to create organization");
@@ -137,14 +249,14 @@ export default function OnboardingPage() {
   // Handle sending invites
   async function handleSendInvites() {
     if (invites.length === 0) {
-      setStep(3);
+      await updateStep(3);
       return;
     }
 
     const validInvites = invites.filter((inv) => inv.email.trim());
     if (validInvites.length === 0) {
       toast.info("No valid emails to invite");
-      setStep(3);
+      await updateStep(3);
       return;
     }
 
@@ -181,7 +293,7 @@ export default function OnboardingPage() {
       toast.success(`Sent ${successCount} invites successfully!`);
     }
 
-    setStep(3);
+    await updateStep(3);
   }
 
   // Handle workspace creation
@@ -215,7 +327,7 @@ export default function OnboardingPage() {
       const newWorkspace = result.data as Workspace;
       setWorkspace(newWorkspace);
       toast.success("Workspace created successfully!");
-      setStep(4);
+      await updateStep(4);
     } catch (err) {
       console.error("Error creating workspace:", err);
       setError("Failed to create workspace");
@@ -224,152 +336,230 @@ export default function OnboardingPage() {
     }
   }
 
-  // Handle GitHub validation
-  async function handleValidateGitHub() {
-    if (!githubToken.trim() || !githubOwner.trim() || !githubRepo.trim()) {
-      setError("All GitHub fields are required");
-      return;
-    }
-
-    setGithubValidating(true);
-    setError("");
+  // Handle GitHub OAuth Sign In
+  async function handleGitHubSignIn() {
+    console.log("[Onboarding] Starting GitHub OAuth");
+    setGitHubOAuthStage("waiting");
+    setGitHubOAuthError("");
 
     try {
-      const result = await window.api.validateGitHubConnector(
-        githubToken,
-        githubOwner,
-        githubRepo
-      );
-
+      const result = await window.api.githubSignIn();
       if (!result.success) {
-        setError("GitHub validation failed");
-        setGithubValid(false);
-      } else if (result.data?.isValid) {
-        setGithubValid(true);
-        toast.success("GitHub connector validated!");
-      } else {
-        setError("Invalid GitHub credentials or insufficient permissions");
-        setGithubValid(false);
+        setGitHubOAuthError(result.error || "Failed to start OAuth");
+        setGitHubOAuthStage("idle");
       }
-    } catch (err) {
-      console.error("Error validating GitHub:", err);
-      setError("Failed to validate GitHub connector");
-      setGithubValid(false);
-    } finally {
-      setGithubValidating(false);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      console.error("Error starting GitHub OAuth:", error);
+      setGitHubOAuthError(msg);
+      setGitHubOAuthStage("idle");
     }
   }
 
-  // Handle Zoho validation
-  async function handleValidateZoho() {
-    if (!zohoToken.trim() || !zohoPortalId.trim()) {
-      setError("Zoho token and portal ID are required");
-      return;
-    }
+  // Handle GitHub repository selection
+  function handleGitHubRepoSelect(repoId: number, repoName: string, repoFullName: string) {
+    console.log("[Onboarding] Repo selected:", repoId, repoFullName);
+    setGitHubSelectedRepoId(repoId);
+    setGitHubSelectedRepoName(repoName);
+    setGitHubSelectedRepoFullName(repoFullName);
+  }
 
-    setZohoValidating(true);
-    setError("");
+  // Handle cancel GitHub OAuth
+  function handleGitHubCancelOAuth() {
+    console.log("[Onboarding] Canceling GitHub OAuth");
+    setGitHubOAuthStage("idle");
+    setGitHubUser(null);
+    setGitHubRepos([]);
+    setGitHubSelectedRepoId(0);
+    setGitHubSelectedRepoName("");
+    setGitHubSelectedRepoFullName("");
+    setGitHubConnectorName("");
+    setGitHubOAuthError("");
+  }
+
+  // Handle Zoho OAuth Sign In
+  async function handleZohoSignIn() {
+    console.log("[Onboarding] Starting Zoho OAuth");
+    setZohoOAuthStage("waiting");
+    setZohoOAuthError("");
 
     try {
-      const result = await window.api.validateZohoConnector(
-        zohoToken,
-        zohoPortalId
-      );
-
+      const result = await window.api.zohoSignIn();
       if (!result.success) {
-        setError("Zoho validation failed");
-        setZohoValid(false);
-      } else if (result.data?.isValid) {
-        setZohoValid(true);
-        toast.success("Zoho connector validated!");
-      } else {
-        setError("Invalid Zoho credentials");
-        setZohoValid(false);
+        setZohoOAuthError(result.error || "Failed to start OAuth");
+        setZohoOAuthStage("idle");
       }
-    } catch (err) {
-      console.error("Error validating Zoho:", err);
-      setError("Failed to validate Zoho connector");
-      setZohoValid(false);
-    } finally {
-      setZohoValidating(false);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      console.error("Error starting Zoho OAuth:", error);
+      setZohoOAuthError(msg);
+      setZohoOAuthStage("idle");
     }
   }
 
-  // Handle adding connector
-  async function handleAddConnector(type: "github" | "zoho") {
-    if (type === "github" && !githubValid) {
-      setError("Please validate GitHub first");
-      return;
-    }
-
-    if (type === "zoho" && !zohoValid) {
-      setError("Please validate Zoho first");
-      return;
-    }
-
-    setSaving(true);
-    setError("");
+  // Handle Zoho portal selection
+  async function handleZohoPortalSelect(
+    portalId: string,
+    portalName: string
+  ) {
+    console.log("[Onboarding] Portal selected:", portalId, portalName);
+    setZohoSelectedPortalId(portalId);
+    setZohoSelectedPortalName(portalName);
+    setZohoSelectedProjectId("");
+    setZohoSelectedProjectName("");
 
     try {
-      const connectorData: Record<string, unknown> =
-        type === "github"
-          ? {
-              workspaceId: workspace?.id,
-              name: `GitHub (${githubOwner}/${githubRepo})`,
-              type: "github",
-              enabled: true,
-              config: {
-                accessToken: githubToken,
-                owner: githubOwner,
-                repo: githubRepo,
-              },
-            }
-          : {
-              workspaceId: workspace?.id,
-              name: `Zoho (${zohoPortalId})`,
-              type: "zoho",
-              enabled: true,
-              config: {
-                accessToken: zohoToken,
-                portalId: zohoPortalId,
-                refreshToken: "",
-                clientId: "",
-                clientSecret: "",
-                projectId: "",
-              },
-            };
+      const result = await window.api.getZohoProjects(portalId);
+      if (result.success) {
+        setZohoProjects(result.data || []);
+      } else {
+        setZohoOAuthError(result.error || "Failed to fetch projects");
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      console.error("Error fetching projects:", error);
+      setZohoOAuthError(msg);
+    }
+  }
 
-      const result = await window.api.addConnector(
-        workspace?.id || "",
-        connectorData
-      );
+  // Handle Zoho project selection
+  function handleZohoProjectSelect(projectId: string, projectName: string) {
+    console.log("[Onboarding] Project selected:", projectId, projectName);
+    setZohoSelectedProjectId(projectId);
+    setZohoSelectedProjectName(projectName);
+  }
+
+  // Handle cancel Zoho OAuth
+  function handleZohoCancelOAuth() {
+    console.log("[Onboarding] Canceling Zoho OAuth");
+    setZohoOAuthStage("idle");
+    setZohoPortals([]);
+    setZohoProjects([]);
+    setZohoSelectedPortalId("");
+    setZohoSelectedPortalName("");
+    setZohoSelectedProjectId("");
+    setZohoSelectedProjectName("");
+    setZohoConnectorName("");
+    setZohoOAuthError("");
+  }
+
+  // Handle adding GitHub connector via OAuth
+  async function handleAddGitHubConnector() {
+    if (!githubSelectedRepoId) {
+      setGitHubOAuthError("Please select a repository");
+      return;
+    }
+
+    setGitHubOAuthStage("saving");
+    setGitHubOAuthError("");
+
+    try {
+      // Get the access token from the main process (fallback to empty if not available)
+      let accessToken = "";
+      try {
+        const tokenResult = await window.api.getGitHubAccessToken?.();
+        if (tokenResult?.success && tokenResult?.accessToken) {
+          accessToken = tokenResult.accessToken;
+        }
+      } catch (tokenError) {
+        // Continue anyway - the token will be applied from pendingGitHubTokens in the IPC handler
+      }
+
+      const [owner, repo] = githubSelectedRepoFullName.split("/");
+      const connectorName =
+        githubConnectorName || `GitHub (${githubSelectedRepoFullName})`;
+
+      const result = await window.api.addConnector(workspace?.id || "", {
+        name: connectorName,
+        type: "github",
+        enabled: true,
+        config: {
+          accessToken,
+          owner,
+          repo,
+        },
+      });
 
       if (!result.success) {
-        setError(result.error || `Failed to add ${type} connector`);
-        setSaving(false);
+        setGitHubOAuthError(result.error || "Failed to add GitHub connector");
+        setGitHubOAuthStage("selecting");
         return;
       }
 
-      setConnectorAddedType(type);
-      setConnectors([...connectors, { type }]);
-      toast.success(`${type} connector added successfully!`);
+      setConnectorAddedType("github");
+      setConnectors([...connectors, { type: "github" }]);
+      toast.success("GitHub connector added successfully!");
 
       // Reset the form
-      if (type === "github") {
-        setGithubToken("");
-        setGithubOwner("");
-        setGithubRepo("");
-        setGithubValid(false);
-      } else {
-        setZohoToken("");
-        setZohoPortalId("");
-        setZohoValid(false);
-      }
+      handleGitHubCancelOAuth();
     } catch (err) {
-      console.error("Error adding connector:", err);
-      setError(`Failed to add ${type} connector`);
-    } finally {
-      setSaving(false);
+      console.error("Error adding GitHub connector:", err);
+      setGitHubOAuthError("Failed to add GitHub connector");
+      setGitHubOAuthStage("selecting");
+    }
+  }
+
+  // Handle adding Zoho connector via OAuth
+  async function handleAddZohoConnector() {
+    if (!zohoSelectedPortalId || !zohoSelectedProjectId) {
+      setZohoOAuthError("Please select both portal and project");
+      return;
+    }
+
+    setZohoOAuthStage("saving");
+    setZohoOAuthError("");
+
+    try {
+      // Get the Zoho tokens from the main process (fallback to empty if not available)
+      let accessToken = "";
+      let refreshToken = "";
+      let apiDomain = "";
+      try {
+        const tokenResult = await window.api.getZohoAccessToken?.();
+        if (tokenResult?.success) {
+          accessToken = tokenResult.accessToken || "";
+          refreshToken = tokenResult.refreshToken || "";
+          apiDomain = tokenResult.apiDomain || "";
+        }
+      } catch (tokenError) {
+        // Continue anyway - the tokens will be applied from pendingZohoTokens in the IPC handler
+      }
+
+      const connectorName =
+        zohoConnectorName ||
+        `Zoho (${zohoSelectedPortalName} / ${zohoSelectedProjectName})`;
+
+      const result = await window.api.addConnector(workspace?.id || "", {
+        name: connectorName,
+        type: "zoho",
+        enabled: true,
+        config: {
+          accessToken,
+          refreshToken,
+          clientId: "",
+          clientSecret: "",
+          portalId: zohoSelectedPortalId,
+          projectId: zohoSelectedProjectId,
+          apiDomain,
+        },
+      });
+
+      if (!result.success) {
+        setZohoOAuthError(result.error || "Failed to add Zoho connector");
+        setZohoOAuthStage("selecting");
+        return;
+      }
+
+      setConnectorAddedType("zoho");
+      setConnectors([...connectors, { type: "zoho" }]);
+      toast.success("Zoho connector added successfully!");
+
+      // Reset the form
+      handleZohoCancelOAuth();
+    } catch (err) {
+      console.error("Error adding Zoho connector:", err);
+      setZohoOAuthError("Failed to add Zoho connector");
+      setZohoOAuthStage("selecting");
     }
   }
 
@@ -428,7 +618,7 @@ export default function OnboardingPage() {
             </div>
 
             {/* Step Indicator */}
-            <div className="flex justify-between mb-12">
+            <div className="flex justify-between mb-8">
               {[1, 2, 3, 4, 5].map((s) => (
                 <div key={s} className="flex flex-col items-center flex-1">
                   <div
@@ -458,6 +648,31 @@ export default function OnboardingPage() {
                 </div>
               ))}
             </div>
+
+            {/* Navigation Header */}
+            {step !== 5 && (
+              <div className="flex justify-between items-center mb-8">
+                <Button
+                  onClick={() => updateStep(Math.max(1, step - 1))}
+                  variant="outline"
+                  size="sm"
+                  disabled={step === 1}
+                >
+                  ← Back
+                </Button>
+                <span className="text-sm text-gray-400">
+                  Step {step} of 4
+                </span>
+                <Button
+                  onClick={() => updateStep(Math.min(4, step + 1))}
+                  variant="outline"
+                  size="sm"
+                  disabled={step === 4}
+                >
+                  Next →
+                </Button>
+              </div>
+            )}
 
             {/* Error Message */}
             {error && (
@@ -501,7 +716,7 @@ export default function OnboardingPage() {
                     disabled={saving || !tenantName.trim()}
                     className="w-full"
                   >
-                    {saving ? "Creating..." : "Create Organization"}
+                    {saving ? "Creating..." : "Next"}
                   </Button>
                 </div>
               </div>
@@ -515,7 +730,7 @@ export default function OnboardingPage() {
                     Invite Your Team
                   </h2>
                   <button
-                    onClick={() => setStep(3)}
+                    onClick={() => updateStep(3)}
                     className="text-sm text-blue-400 hover:text-blue-300"
                   >
                     Skip for now
@@ -662,67 +877,101 @@ export default function OnboardingPage() {
                       )}
                     </div>
 
-                    {connectorAddedType !== "github" ? (
+                    {connectorAddedType === "github" ? (
+                      <div className="text-green-400 text-sm">
+                        Connected: {githubSelectedRepoFullName}
+                      </div>
+                    ) : githubOAuthStage === "idle" ? (
                       <div className="space-y-3">
-                        <div className="text-xs text-gray-400 bg-blue-900/20 border border-blue-800/20 p-2 rounded mb-2">
-                          Need a token? Go to GitHub → Settings → Developer
-                          settings → Personal access tokens → Generate new token
+                        <p className="text-sm text-gray-400 mb-4">
+                          Sign in with your GitHub account to connect a repository.
+                        </p>
+                        <Button
+                          onClick={handleGitHubSignIn}
+                          className="w-full py-2 text-sm"
+                          variant="primary"
+                        >
+                          Sign In with GitHub
+                        </Button>
+                      </div>
+                    ) : githubOAuthStage === "waiting" ? (
+                      <div className="flex flex-col items-center space-y-4">
+                        <div className="relative">
+                          <div className="w-6 h-6 border-2 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
                         </div>
-                        <input
-                          type="password"
-                          value={githubToken}
-                          onChange={(e) => setGithubToken(e.target.value)}
-                          placeholder="Personal Access Token"
-                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 text-gray-100 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                        />
-                        <input
-                          type="text"
-                          value={githubOwner}
-                          onChange={(e) => setGithubOwner(e.target.value)}
-                          placeholder="Owner (username or org)"
-                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 text-gray-100 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                        />
-                        <input
-                          type="text"
-                          value={githubRepo}
-                          onChange={(e) => setGithubRepo(e.target.value)}
-                          placeholder="Repository"
-                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 text-gray-100 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                        />
+                        <div className="text-center">
+                          <p className="text-sm text-gray-100 font-medium">
+                            Authorizing with GitHub...
+                          </p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            Complete the authorization in your browser
+                          </p>
+                        </div>
+                        <Button
+                          onClick={handleGitHubCancelOAuth}
+                          variant="outline"
+                          size="sm"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    ) : githubOAuthStage === "selecting" || githubOAuthStage === "saving" ? (
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-200 mb-1">
+                            Repository <span className="text-red-400">*</span>
+                          </label>
+                          <select
+                            value={githubSelectedRepoId}
+                            onChange={(e) => {
+                              const repo = githubRepos.find(
+                                (r) => r.id === parseInt(e.target.value)
+                              );
+                              if (repo) {
+                                handleGitHubRepoSelect(repo.id, repo.name, repo.full_name);
+                              }
+                            }}
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 text-gray-100 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                          >
+                            <option value="">Choose a repository...</option>
+                            {githubRepos.map((repo) => (
+                              <option key={repo.id} value={repo.id}>
+                                {repo.full_name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {githubOAuthError && (
+                          <div className="text-xs text-red-300 bg-red-900/20 border border-red-800/20 p-2 rounded">
+                            {githubOAuthError}
+                          </div>
+                        )}
+
                         <div className="flex gap-2">
                           <Button
-                            onClick={handleValidateGitHub}
+                            onClick={handleGitHubCancelOAuth}
+                            variant="outline"
+                            className="flex-1 py-2 text-sm"
+                            disabled={githubOAuthStage === "saving"}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            onClick={handleAddGitHubConnector}
                             disabled={
-                              githubValidating ||
-                              !githubToken ||
-                              !githubOwner ||
-                              !githubRepo
+                              !githubSelectedRepoId ||
+                              githubOAuthStage === "saving"
                             }
                             className="flex-1 py-2 text-sm"
-                            variant={githubValid ? "secondary" : "primary"}
                           >
-                            {githubValidating
-                              ? "Validating..."
-                              : githubValid
-                                ? "✓ Valid"
-                                : "Validate"}
+                            {githubOAuthStage === "saving"
+                              ? "Saving..."
+                              : "Connect"}
                           </Button>
-                          {githubValid && (
-                            <Button
-                              onClick={() => handleAddConnector("github")}
-                              disabled={saving}
-                              className="flex-1 py-2 text-sm"
-                            >
-                              {saving ? "Adding..." : "Connect"}
-                            </Button>
-                          )}
                         </div>
                       </div>
-                    ) : (
-                      <div className="text-green-400 text-sm">
-                        Connected: {githubOwner}/{githubRepo}
-                      </div>
-                    )}
+                    ) : null}
                   </div>
 
                   {/* Zoho Card */}
@@ -743,56 +992,135 @@ export default function OnboardingPage() {
                       )}
                     </div>
 
-                    {connectorAddedType !== "zoho" ? (
+                    {connectorAddedType === "zoho" ? (
+                      <div className="text-green-400 text-sm">
+                        Connected: {zohoSelectedPortalName} / {zohoSelectedProjectName}
+                      </div>
+                    ) : zohoOAuthStage === "idle" ? (
                       <div className="space-y-3">
-                        <div className="text-xs text-gray-400 bg-orange-900/20 border border-orange-800/20 p-2 rounded mb-2">
-                          Get token from Zoho Projects → Settings → API Token
+                        <p className="text-sm text-gray-400 mb-4">
+                          Sign in with your Zoho account to connect your projects.
+                        </p>
+                        <Button
+                          onClick={handleZohoSignIn}
+                          className="w-full py-2 text-sm"
+                          variant="primary"
+                        >
+                          Sign In with Zoho
+                        </Button>
+                      </div>
+                    ) : zohoOAuthStage === "waiting" ? (
+                      <div className="flex flex-col items-center space-y-4">
+                        <div className="relative">
+                          <div className="w-8 h-8 border-2 border-orange-500/20 border-t-orange-500 rounded-full animate-spin"></div>
                         </div>
-                        <input
-                          type="password"
-                          value={zohoToken}
-                          onChange={(e) => setZohoToken(e.target.value)}
-                          placeholder="Access Token"
-                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 text-gray-100 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                        />
-                        <input
-                          type="text"
-                          value={zohoPortalId}
-                          onChange={(e) => setZohoPortalId(e.target.value)}
-                          placeholder="Portal ID"
-                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 text-gray-100 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                        />
+                        <div className="text-center">
+                          <p className="text-sm text-gray-100 font-medium">
+                            Authorizing with Zoho...
+                          </p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            Complete the authorization in your browser
+                          </p>
+                        </div>
+                        <Button
+                          onClick={handleZohoCancelOAuth}
+                          variant="outline"
+                          size="sm"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    ) : zohoOAuthStage === "selecting" || zohoOAuthStage === "saving" ? (
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-200 mb-1">
+                            Portal <span className="text-red-400">*</span>
+                          </label>
+                          <select
+                            value={zohoSelectedPortalId}
+                            onChange={(e) => {
+                              const portal = zohoPortals.find(
+                                (p) => p.id === e.target.value
+                              );
+                              if (portal) {
+                                handleZohoPortalSelect(portal.id, portal.name);
+                              }
+                            }}
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 text-gray-100 rounded text-sm focus:ring-2 focus:ring-orange-500 outline-none"
+                          >
+                            <option value="">Choose a portal...</option>
+                            {zohoPortals.map((portal) => (
+                              <option key={portal.id} value={portal.id}>
+                                {portal.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {zohoSelectedPortalId && (
+                          <div>
+                            <label className="block text-xs font-medium text-gray-200 mb-1">
+                              Project <span className="text-red-400">*</span>
+                            </label>
+                            <select
+                              value={zohoSelectedProjectId}
+                              onChange={(e) => {
+                                const project = zohoProjects.find(
+                                  (p) => p.id_string === e.target.value
+                                );
+                                if (project) {
+                                  handleZohoProjectSelect(
+                                    project.id_string,
+                                    project.name
+                                  );
+                                }
+                              }}
+                              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 text-gray-100 rounded text-sm focus:ring-2 focus:ring-orange-500 outline-none"
+                            >
+                              <option value="">Choose a project...</option>
+                              {zohoProjects.map((project) => (
+                                <option
+                                  key={project.id_string}
+                                  value={project.id_string}
+                                >
+                                  {project.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+
+                        {zohoOAuthError && (
+                          <div className="text-xs text-red-300 bg-red-900/20 border border-red-800/20 p-2 rounded">
+                            {zohoOAuthError}
+                          </div>
+                        )}
+
                         <div className="flex gap-2">
                           <Button
-                            onClick={handleValidateZoho}
+                            onClick={handleZohoCancelOAuth}
+                            variant="outline"
+                            className="flex-1 py-2 text-sm"
+                            disabled={zohoOAuthStage === "saving"}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            onClick={handleAddZohoConnector}
                             disabled={
-                              zohoValidating || !zohoToken || !zohoPortalId
+                              !zohoSelectedPortalId ||
+                              !zohoSelectedProjectId ||
+                              zohoOAuthStage === "saving"
                             }
                             className="flex-1 py-2 text-sm"
-                            variant={zohoValid ? "secondary" : "primary"}
                           >
-                            {zohoValidating
-                              ? "Validating..."
-                              : zohoValid
-                                ? "✓ Valid"
-                                : "Validate"}
+                            {zohoOAuthStage === "saving"
+                              ? "Saving..."
+                              : "Connect"}
                           </Button>
-                          {zohoValid && (
-                            <Button
-                              onClick={() => handleAddConnector("zoho")}
-                              disabled={saving}
-                              className="flex-1 py-2 text-sm"
-                            >
-                              {saving ? "Adding..." : "Connect"}
-                            </Button>
-                          )}
                         </div>
                       </div>
-                    ) : (
-                      <div className="text-green-400 text-sm">
-                        Connected: {zohoPortalId}
-                      </div>
-                    )}
+                    ) : null}
                   </div>
                 </div>
 
@@ -804,8 +1132,8 @@ export default function OnboardingPage() {
                   </Button>
                   {connectors.length > 0 && (
                     <button
-                      onClick={() => setStep(4)}
-                      className="text-sm text-gray-400 hover:text-gray-300"
+                      onClick={() => updateStep(4)}
+                      className="text-sm text-gray-400 hover:text-gray-300 text-center"
                     >
                       Add another connector
                     </button>

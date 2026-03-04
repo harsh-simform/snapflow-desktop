@@ -4,6 +4,7 @@ import path from "path";
 import { getSupabase } from "../utils/supabase";
 import log from "electron-log";
 import { customAlphabet } from "nanoid";
+import { zohoService } from "./zoho";
 import type {
   Connector,
   GitHubConnectorConfig,
@@ -14,7 +15,7 @@ const nanoid = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 8);
 
 export class ConnectorService {
   /**
-   * Get all connectors for a workspace
+   * Get all connectors for a workspace (excludes soft-deleted)
    */
   async getConnectors(workspaceId: string): Promise<Connector[]> {
     log.info(
@@ -32,6 +33,7 @@ export class ConnectorService {
       .from("connectors")
       .select("*")
       .eq("workspace_id", workspaceId)
+      .is("deleted_at", null)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -45,7 +47,7 @@ export class ConnectorService {
   }
 
   /**
-   * Get connector by ID
+   * Get connector by ID (excludes soft-deleted)
    */
   async getConnectorById(id: string): Promise<Connector | null> {
     log.info("[Connector Service] Fetching connector by ID:", id);
@@ -60,6 +62,7 @@ export class ConnectorService {
       .from("connectors")
       .select("*")
       .eq("id", id)
+      .is("deleted_at", null)
       .single();
 
     if (error) {
@@ -75,7 +78,7 @@ export class ConnectorService {
   }
 
   /**
-   * Get enabled connectors of a specific type for a workspace
+   * Get enabled connectors of a specific type for a workspace (excludes soft-deleted)
    */
   async getConnectorsByType(
     workspaceId: string,
@@ -100,6 +103,7 @@ export class ConnectorService {
       .eq("workspace_id", workspaceId)
       .eq("type", type)
       .eq("enabled", true)
+      .is("deleted_at", null)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -118,7 +122,7 @@ export class ConnectorService {
   }
 
   /**
-   * Get GitHub connector by repo
+   * Get GitHub connector by repo (excludes soft-deleted)
    */
   async getConnectorByRepo(
     workspaceId: string,
@@ -145,6 +149,7 @@ export class ConnectorService {
       .eq("type", "github")
       .filter("config->>owner", "eq", owner)
       .filter("config->>repo", "eq", repo)
+      .is("deleted_at", null)
       .single();
 
     if (error) {
@@ -247,6 +252,18 @@ export class ConnectorService {
 
     if (error) {
       log.error("[Connector Service] ✗ Failed to add connector:", error);
+
+      // Provide user-friendly error messages for common constraint violations
+      const errorMsg = error.message || "";
+      if (errorMsg.includes("connectors_workspace_id_name_key")) {
+        throw new Error(
+          `A connector named "${connector.name}" already exists in this workspace. Please choose a different name.`
+        );
+      }
+      if (errorMsg.includes("unique constraint")) {
+        throw new Error("A connector with this name already exists. Please choose a different name.");
+      }
+
       throw new Error("Failed to add connector");
     }
 
@@ -298,7 +315,7 @@ export class ConnectorService {
   }
 
   /**
-   * Delete a connector
+   * Delete a connector (soft delete - sets deleted_at timestamp)
    */
   async deleteConnector(id: string): Promise<void> {
     log.info("[Connector Service] Deleting connector:", id);
@@ -309,7 +326,10 @@ export class ConnectorService {
       throw new Error("Supabase not configured");
     }
 
-    const { error } = await supabase.from("connectors").delete().eq("id", id);
+    const { error } = await supabase
+      .from("connectors")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("id", id);
 
     if (error) {
       log.error("[Connector Service] ✗ Failed to delete connector:", error);
@@ -715,6 +735,445 @@ export class ConnectorService {
           cause: error,
         }
       );
+    }
+  }
+
+  /**
+   * Sync issue to Zoho Projects as a bug
+   */
+  async syncToZoho(
+    connector: Connector,
+    issue: {
+      title: string;
+      description?: string;
+      filePath: string;
+      cloudFileUrl?: string;
+      syncedTo?: Array<{
+        platform: string;
+        externalId: string;
+        url?: string;
+        connectorId?: string;
+      }>;
+      tags?: string[];
+      type?: "screenshot" | "recording";
+    }
+  ): Promise<{ bugId: string; url: string; isUpdate: boolean }> {
+    const config = connector.config as ZohoConnectorConfig;
+
+    if (!config.accessToken || !config.portalId || !config.projectId) {
+      throw new Error("Zoho connector not properly configured");
+    }
+
+    try {
+      // Check if already synced to this Zoho project
+      const existingSync = issue.syncedTo?.find(
+        (sync) =>
+          sync.platform === "zoho" &&
+          sync.connectorId === connector.id
+      );
+
+      if (existingSync) {
+        log.info(
+          "[Zoho] Issue already synced to this project, skipping duplicate creation"
+        );
+        return {
+          bugId: existingSync.externalId,
+          url: existingSync.url || "",
+          isUpdate: true,
+        };
+      }
+
+      // Set accounts server if present (for region-specific API calls)
+      if (config.accountsServer || config.apiDomain) {
+        let accountsServerUrl = config.accountsServer;
+        let apiDomain = config.apiDomain;
+
+        // If apiDomain is a full URL, extract just the hostname
+        if (apiDomain && apiDomain.includes("://")) {
+          try {
+            const url = new URL(apiDomain);
+            apiDomain = url.hostname;
+          } catch (e) {
+            log.warn("[Zoho] Failed to parse apiDomain as URL:", apiDomain);
+          }
+        }
+
+        // If we don't have accountsServer but have apiDomain, construct it
+        if (!accountsServerUrl && apiDomain) {
+          accountsServerUrl = `https://accounts.${apiDomain}`;
+        }
+
+        // Set the service with proper values
+        if (accountsServerUrl) {
+          zohoService.setAccountsServer(accountsServerUrl, apiDomain);
+        }
+      }
+
+      // Try to create bug with current access token
+      let accessToken = config.accessToken;
+
+      try {
+        const result = await zohoService.createBug(
+          accessToken,
+          config.portalId,
+          config.projectId,
+          {
+            title: issue.title,
+            description: issue.description || "Screenshot captured from SnapFlow",
+            imageUrl: issue.cloudFileUrl,
+          }
+        );
+
+        log.info("[Zoho] Bug created successfully:", result.bugId);
+        return {
+          bugId: result.bugId,
+          url: result.url,
+          isUpdate: false,
+        };
+      } catch (error) {
+        // If we get a 401, try to refresh the token
+        if (error.response?.status === 401 && config.refreshToken) {
+          log.info("[Zoho] Access token expired, attempting to refresh...");
+
+          try {
+            const newAccessToken = await zohoService.refreshAccessToken(
+              config.refreshToken
+            );
+
+            // Update the connector with the new token
+            await this.updateConnector(connector.id, {
+              config: {
+                ...config,
+                accessToken: newAccessToken,
+              },
+            });
+
+            accessToken = newAccessToken;
+
+            // Retry bug creation with new token
+            const result = await zohoService.createBug(
+              accessToken,
+              config.portalId,
+              config.projectId,
+              {
+                title: issue.title,
+                description: issue.description || "Screenshot captured from SnapFlow",
+                imageUrl: issue.cloudFileUrl,
+              }
+            );
+
+            log.info("[Zoho] Bug created successfully after token refresh:", result.bugId);
+            return {
+              bugId: result.bugId,
+              url: result.url,
+              isUpdate: false,
+            };
+          } catch (refreshError) {
+            log.error("[Zoho] Failed to refresh access token:", refreshError);
+            throw new Error(
+              "Zoho access token expired and could not be refreshed. Please reconnect in Settings.",
+              { cause: refreshError }
+            );
+          }
+        }
+
+        throw error;
+      }
+    } catch (error) {
+      log.error("[Zoho] Sync error:", error);
+      if (error.response?.status === 401) {
+        throw new Error("Zoho access token is invalid or expired", {
+          cause: error,
+        });
+      } else if (error.response?.status === 404) {
+        throw new Error("Zoho portal or project not found", {
+          cause: error,
+        });
+      } else if (error.response?.status === 403) {
+        throw new Error(
+          "Zoho API access denied or insufficient permissions",
+          {
+            cause: error,
+          }
+        );
+      }
+      throw new Error(
+        `Failed to sync to Zoho: ${error.response?.data?.message || error.response?.data?.errorMessage || error.message}`,
+        {
+          cause: error,
+        }
+      );
+    }
+  }
+
+  /**
+   * Close (delete equivalent) a GitHub issue
+   * Note: GitHub API doesn't support deleting issues, only closing them
+   */
+  async closeGitHubIssue(
+    connector: Connector,
+    issueNumber: number
+  ): Promise<void> {
+    const config = connector.config as {
+      owner: string;
+      repo: string;
+      accessToken: string;
+    };
+
+    if (!config.accessToken || !config.owner || !config.repo) {
+      throw new Error("GitHub connector not properly configured");
+    }
+
+    try {
+      log.info(
+        "[GitHub] Closing issue #",
+        issueNumber,
+        "in",
+        `${config.owner}/${config.repo}`
+      );
+
+      await axios.patch(
+        `https://api.github.com/repos/${config.owner}/${config.repo}/issues/${issueNumber}`,
+        { state: "closed" },
+        {
+          headers: {
+            Authorization: `Bearer ${config.accessToken}`,
+            Accept: "application/vnd.github.v3+json",
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      log.info("[GitHub] ✓ Issue #", issueNumber, "closed successfully");
+    } catch (error) {
+      log.error("[GitHub] ✗ Failed to close issue:", error.response?.data || error.message);
+      throw new Error(
+        `Failed to close GitHub issue: ${error.response?.data?.message || error.message}`
+      );
+    }
+  }
+
+  /**
+   * Update a Zoho bug with new title/description
+   */
+  async updateZohoBug(
+    connector: Connector,
+    bugId: string,
+    updates: { title?: string; description?: string; tags?: string[] }
+  ): Promise<void> {
+    const config = connector.config as ZohoConnectorConfig;
+
+    if (!config.accessToken || !config.portalId || !config.projectId) {
+      throw new Error("Zoho connector not properly configured");
+    }
+
+    try {
+      // Set accounts server if present (for region-specific API calls)
+      if (config.accountsServer || config.apiDomain) {
+        let accountsServerUrl = config.accountsServer;
+        let apiDomain = config.apiDomain;
+
+        // If apiDomain is a full URL, extract just the hostname
+        if (apiDomain && apiDomain.includes("://")) {
+          try {
+            const url = new URL(apiDomain);
+            apiDomain = url.hostname;
+          } catch (e) {
+            log.warn("[Zoho] Failed to parse apiDomain as URL:", apiDomain);
+          }
+        }
+
+        // If we don't have accountsServer but have apiDomain, construct it
+        if (!accountsServerUrl && apiDomain) {
+          accountsServerUrl = `https://accounts.${apiDomain}`;
+        }
+
+        // Set the service with proper values
+        if (accountsServerUrl) {
+          zohoService.setAccountsServer(accountsServerUrl, apiDomain);
+        }
+      }
+
+      let accessToken = config.accessToken;
+
+      try {
+        // Note: Zoho API doesn't support tags, only title and description
+        const updateData: { title?: string; description?: string } = {};
+        if (updates.title) updateData.title = updates.title;
+        if (updates.description) updateData.description = updates.description;
+
+        await zohoService.updateBug(
+          accessToken,
+          config.portalId,
+          config.projectId,
+          bugId,
+          updateData
+        );
+
+        log.info("[Zoho] ✓ Bug updated successfully");
+      } catch (error) {
+        // If we get a 401, try to refresh the token
+        if (error.response?.status === 401 && config.refreshToken) {
+          log.info("[Zoho] Access token expired, attempting to refresh...");
+
+          try {
+            const newAccessToken = await zohoService.refreshAccessToken(
+              config.refreshToken
+            );
+
+            // Update the connector with the new token
+            await this.updateConnector(connector.id, {
+              config: {
+                ...config,
+                accessToken: newAccessToken,
+              },
+            });
+
+            accessToken = newAccessToken;
+
+            // Retry update with new token
+            const updateData: { title?: string; description?: string } = {};
+            if (updates.title) updateData.title = updates.title;
+            if (updates.description) updateData.description = updates.description;
+
+            await zohoService.updateBug(
+              accessToken,
+              config.portalId,
+              config.projectId,
+              bugId,
+              updateData
+            );
+
+            log.info("[Zoho] ✓ Bug updated successfully after token refresh");
+          } catch (refreshError) {
+            log.error("[Zoho] Failed to refresh access token:", refreshError);
+            throw new Error(
+              "Zoho access token expired and could not be refreshed. Please reconnect in Settings.",
+              { cause: refreshError }
+            );
+          }
+        } else {
+          throw error;
+        }
+      }
+    } catch (error) {
+      log.error("[Zoho] Update error:", error);
+      if (error.response?.status === 401) {
+        throw new Error("Zoho access token is invalid or expired", {
+          cause: error,
+        });
+      } else if (error.response?.status === 404) {
+        throw new Error("Zoho bug not found", {
+          cause: error,
+        });
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a Zoho bug
+   */
+  async deleteZohoBug(
+    connector: Connector,
+    bugId: string
+  ): Promise<void> {
+    const config = connector.config as ZohoConnectorConfig;
+
+    if (!config.accessToken || !config.portalId || !config.projectId) {
+      throw new Error("Zoho connector not properly configured");
+    }
+
+    try {
+      // Set accounts server if present (for region-specific API calls)
+      if (config.accountsServer || config.apiDomain) {
+        let accountsServerUrl = config.accountsServer;
+        let apiDomain = config.apiDomain;
+
+        // If apiDomain is a full URL, extract just the hostname
+        if (apiDomain && apiDomain.includes("://")) {
+          try {
+            const url = new URL(apiDomain);
+            apiDomain = url.hostname;
+          } catch (e) {
+            log.warn("[Zoho] Failed to parse apiDomain as URL:", apiDomain);
+          }
+        }
+
+        // If we don't have accountsServer but have apiDomain, construct it
+        if (!accountsServerUrl && apiDomain) {
+          accountsServerUrl = `https://accounts.${apiDomain}`;
+        }
+
+        // Set the service with proper values
+        if (accountsServerUrl) {
+          zohoService.setAccountsServer(accountsServerUrl, apiDomain);
+        }
+      }
+
+      let accessToken = config.accessToken;
+
+      try {
+        await zohoService.deleteBug(
+          accessToken,
+          config.portalId,
+          config.projectId,
+          bugId
+        );
+
+        log.info("[Zoho] ✓ Bug deleted successfully");
+      } catch (error) {
+        // If we get a 401, try to refresh the token
+        if (error.response?.status === 401 && config.refreshToken) {
+          log.info("[Zoho] Access token expired, attempting to refresh...");
+
+          try {
+            const newAccessToken = await zohoService.refreshAccessToken(
+              config.refreshToken
+            );
+
+            // Update the connector with the new token
+            await this.updateConnector(connector.id, {
+              config: {
+                ...config,
+                accessToken: newAccessToken,
+              },
+            });
+
+            accessToken = newAccessToken;
+
+            // Retry delete with new token
+            await zohoService.deleteBug(
+              accessToken,
+              config.portalId,
+              config.projectId,
+              bugId
+            );
+
+            log.info("[Zoho] ✓ Bug deleted successfully after token refresh");
+          } catch (refreshError) {
+            log.error("[Zoho] Failed to refresh access token:", refreshError);
+            throw new Error(
+              "Zoho access token expired and could not be refreshed. Please reconnect in Settings.",
+              { cause: refreshError }
+            );
+          }
+        } else {
+          throw error;
+        }
+      }
+    } catch (error) {
+      log.error("[Zoho] Delete error:", error);
+      if (error.response?.status === 401) {
+        throw new Error("Zoho access token is invalid or expired", {
+          cause: error,
+        });
+      } else if (error.response?.status === 404) {
+        throw new Error("Zoho bug not found", {
+          cause: error,
+        });
+      }
+      throw error;
     }
   }
 

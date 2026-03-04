@@ -81,6 +81,17 @@ export class WorkspaceService {
         "[Workspace Service] ✗ Create workspace error:",
         workspaceError.message
       );
+
+      // Provide user-friendly error messages for common constraint violations
+      if (
+        workspaceError.message.includes("workspaces_tenant_id_slug_key") ||
+        workspaceError.message.includes("unique constraint")
+      ) {
+        throw new Error(
+          `A workspace with the name "${name}" already exists in this organization. Please choose a different name.`
+        );
+      }
+
       throw new Error(workspaceError.message);
     }
 
@@ -316,6 +327,114 @@ export class WorkspaceService {
       log.error("[Workspace Service] ✗ OTP invite failed:", err);
       throw err;
     }
+  }
+
+  /**
+   * Update workspace details (name and/or description)
+   * Only workspace admins can update
+   */
+  async updateWorkspace(
+    workspaceId: string,
+    userId: string,
+    updates: { name?: string; description?: string }
+  ): Promise<Workspace> {
+    log.info("[Workspace Service] === UPDATE WORKSPACE START ===");
+    log.info("[Workspace Service] Workspace ID:", workspaceId);
+    log.info("[Workspace Service] User ID:", userId);
+
+    const supabase = getSupabase();
+    if (!supabase) {
+      log.error("[Workspace Service] ✗ Supabase not configured");
+      throw new Error(
+        "Supabase is not configured. Please check your environment variables."
+      );
+    }
+
+    // Check if user is an admin in this workspace
+    const { data: memberData, error: memberError } = await supabase
+      .from("workspace_members")
+      .select("role")
+      .eq("workspace_id", workspaceId)
+      .eq("user_id", userId)
+      .single();
+
+    if (memberError || !memberData) {
+      log.error(
+        "[Workspace Service] ✗ User is not a member of this workspace"
+      );
+      throw new Error("You are not a member of this workspace");
+    }
+
+    if (memberData.role !== "admin") {
+      log.error("[Workspace Service] ✗ User is not an admin. Role:", memberData.role);
+      throw new Error("Only workspace admins can update workspace details");
+    }
+
+    // Get current workspace to verify it exists
+    const workspace = await this.getWorkspaceById(workspaceId);
+    if (!workspace) {
+      throw new Error("Workspace not found");
+    }
+
+    const updateData: Record<string, unknown> = {};
+
+    // If name is being updated, also update the slug
+    if (updates.name !== undefined) {
+      updateData.name = updates.name;
+      // Auto-generate slug from name
+      let newSlug = slugify(updates.name);
+      let originalSlug = newSlug;
+      let attempt = 2;
+
+      // Check for unique slug within tenant
+      while (true) {
+        const { data: existing } = await supabase
+          .from("workspaces")
+          .select("id")
+          .eq("tenant_id", workspace.tenantId)
+          .eq("slug", newSlug)
+          .neq("id", workspaceId) // Exclude current workspace
+          .single();
+
+        if (!existing) {
+          break;
+        }
+
+        newSlug = `${originalSlug}-${attempt}`;
+        attempt++;
+      }
+
+      updateData.slug = newSlug;
+      log.info("[Workspace Service] New slug:", newSlug);
+    }
+
+    if (updates.description !== undefined) {
+      updateData.description = updates.description || null;
+    }
+
+    log.info("[Workspace Service] Updates:", updateData);
+
+    const { data, error } = await supabase
+      .from("workspaces")
+      .update(updateData)
+      .eq("id", workspaceId)
+      .select()
+      .single();
+
+    if (error) {
+      log.error("[Workspace Service] ✗ Update error:", error.message);
+      throw new Error(error.message);
+    }
+
+    if (!data) {
+      log.error("[Workspace Service] ✗ No workspace data returned");
+      throw new Error("Failed to update workspace");
+    }
+
+    const updatedWorkspace = this.mapSupabaseWorkspace(data);
+    log.info("[Workspace Service] ✓ Workspace updated successfully");
+    log.info("[Workspace Service] === UPDATE WORKSPACE END ===");
+    return updatedWorkspace;
   }
 
   /**

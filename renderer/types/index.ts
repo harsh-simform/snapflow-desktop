@@ -43,7 +43,7 @@ export interface WorkspaceWithMembers extends Workspace {
   currentUserRole?: UserRole;
 }
 
-export interface Issue {
+export interface Snap {
   id: string;
   workspaceId: string;
   createdBy: string;
@@ -68,6 +68,9 @@ export interface Issue {
   [key: string]: unknown;
 }
 
+// Backwards compatibility alias
+export type Issue = Snap;
+
 export interface GitHubConnectorConfig {
   accessToken: string;
   owner: string;
@@ -81,6 +84,10 @@ export interface ZohoConnectorConfig {
   clientSecret: string;
   portalId: string;
   projectId: string;
+  portalName?: string;
+  projectName?: string;
+  apiDomain?: string;
+  accountsServer?: string;
 }
 
 export interface Connector {
@@ -122,6 +129,7 @@ export interface AppSettings {
   storagePath: string;
   defaultCaptureMode: "fullscreen" | "window" | "region";
   defaultRecordingMode: "fullscreen" | "region";
+  autoSync?: boolean;
   shortcuts: {
     captureScreenshot: string;
     recordScreen: string;
@@ -145,6 +153,8 @@ export type IPCChannel =
   | "user:login"
   | "user:logout"
   | "user:google-signin"
+  | "user:get-session-expiry"
+  | "user:is-session-expiring-soon"
   | "tenant:create"
   | "tenant:list"
   | "tenant:get"
@@ -160,6 +170,10 @@ export type IPCChannel =
   | "workspace-member:update-role"
   | "workspace-member:invite"
   | "onboarding:get-status"
+  | "snap:create"
+  | "snap:list"
+  | "snap:update"
+  | "snap:delete"
   | "issue:create"
   | "issue:list"
   | "issue:update"
@@ -173,8 +187,13 @@ export type IPCChannel =
   | "connector:delete"
   | "connector:validate-github"
   | "connector:validate-zoho"
+  | "connector:zoho-signin"
   | "connector:get-zoho-portals"
   | "connector:get-zoho-projects"
+  | "connector:github-signin"
+  | "connector:get-github-repos"
+  | "connector:get-github-user"
+  | "sync:snap"
   | "sync:issue"
   | "sync:to-cloud"
   | "sync:from-cloud"

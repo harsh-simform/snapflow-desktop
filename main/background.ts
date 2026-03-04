@@ -15,6 +15,7 @@ import { updaterService } from "./services/updater";
 import { syncService } from "./services/sync";
 import { tenantService } from "./services/tenant";
 import { workspaceService } from "./services/workspace";
+import { onboardingService } from "./services/onboarding";
 import { zohoService } from "./services/zoho";
 import { githubService } from "./services/github";
 import { storageManager } from "./utils/storage";
@@ -2210,6 +2211,25 @@ function setupIPCHandlers() {
     }
   });
 
+  ipcMain.handle("tenant:update", async (_event, { tenantId, name, description }) => {
+    try {
+      const userId = sessionManager.getUserId();
+      if (!userId) {
+        throw new Error("User not authenticated");
+      }
+      const tenant = await tenantService.updateTenant(tenantId, userId, {
+        name,
+        description,
+      });
+      return { success: true, data: tenant };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      log.error("Update tenant error:", error);
+      return { success: false, error: errorMessage };
+    }
+  });
+
   // Workspace handlers
   ipcMain.handle(
     "workspace:create",
@@ -2245,6 +2265,25 @@ function setupIPCHandlers() {
       const errorMessage =
         error instanceof Error ? error.message : "An unexpected error occurred";
       log.error("List workspaces error:", error);
+      return { success: false, error: errorMessage };
+    }
+  });
+
+  ipcMain.handle("workspace:update", async (_event, { workspaceId, name, description }) => {
+    try {
+      const userId = sessionManager.getUserId();
+      if (!userId) {
+        throw new Error("User not authenticated");
+      }
+      const workspace = await workspaceService.updateWorkspace(workspaceId, userId, {
+        name,
+        description,
+      });
+      return { success: true, data: workspace };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      log.error("Update workspace error:", error);
       return { success: false, error: errorMessage };
     }
   });
@@ -2311,13 +2350,26 @@ function setupIPCHandlers() {
       // Onboarding is complete after creating tenant + workspace (connectors optional)
       const isComplete = hasTenant && hasWorkspace;
 
-      let currentStep = 1;
-      if (hasTenant && !hasWorkspace) {
-        currentStep = 3; // Skip step 2 (invites) for now, go to workspace
-      } else if (hasTenant && hasWorkspace && !hasConnector) {
-        currentStep = 4; // Add connectors
-      } else if (isComplete) {
-        currentStep = 5; // Done
+      // Fetch persisted onboarding step
+      let persistedProgress = await onboardingService.getProgress(userId);
+      if (!persistedProgress) {
+        // Initialize if not exists
+        await onboardingService.initializeProgress(userId);
+        persistedProgress = {
+          currentStep: 1,
+          isComplete: false,
+        };
+      }
+
+      // If user has completed onboarding or completed flag is set, return step 5
+      let currentStep = persistedProgress.currentStep;
+      if (isComplete && !persistedProgress.isComplete) {
+        // User just completed onboarding (created tenant + workspace)
+        currentStep = 5;
+        await onboardingService.complete(userId);
+      } else if (persistedProgress.isComplete) {
+        // Already marked complete, show step 5
+        currentStep = 5;
       }
 
       return {
@@ -2336,6 +2388,24 @@ function setupIPCHandlers() {
       const errorMessage =
         error instanceof Error ? error.message : "An unexpected error occurred";
       log.error("Get onboarding status error:", error);
+      return { success: false, error: errorMessage };
+    }
+  });
+
+  // Onboarding set-step handler
+  ipcMain.handle("onboarding:set-step", async (_event, { step }) => {
+    try {
+      const userId = sessionManager.getUserId();
+      if (!userId) {
+        return { success: false, error: "User not authenticated" };
+      }
+
+      await onboardingService.setStep(userId, step);
+      return { success: true };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      log.error("Set onboarding step error:", error);
       return { success: false, error: errorMessage };
     }
   });
@@ -2362,12 +2432,16 @@ function setupIPCHandlers() {
           syncService
             .syncAllToCloud(userId)
             .then((result) => {
+              log.info("[AutoSync] Sync completed. Result:", { success: result.success, syncedCount: result.syncedCount, failedCount: result.failedCount });
               if (result.success && mainWindow && mainWindow.webContents) {
                 // Notify renderer that auto-sync completed so it can refresh
+                log.info("[AutoSync] Sending auto-sync-completed event to renderer");
                 mainWindow.webContents.send("auto-sync-completed", {
                   userId,
                   syncedCount: result.syncedCount,
                 });
+              } else if (!result.success) {
+                log.warn("[AutoSync] Sync failed:", result.errors);
               }
             })
             .catch((err) =>
@@ -2403,6 +2477,76 @@ function setupIPCHandlers() {
     try {
       const issue = await issueService.updateIssue(issueId, updates);
 
+      // Propagate updates to external platforms if title/description/tags changed
+      const hasMetadataUpdates =
+        updates.title || updates.description || updates.tags;
+
+      // Update Supabase with metadata changes
+      if (hasMetadataUpdates) {
+        log.info("[Update] Syncing metadata changes to database...");
+        await syncService.updateSnapMetadata(issueId, issue.userId, {
+          title: updates.title,
+          description: updates.description,
+          tags: updates.tags,
+        });
+      }
+
+      if (hasMetadataUpdates && issue.syncedTo && issue.syncedTo.length > 0) {
+        // Update GitHub issues
+        const githubSync = issue.syncedTo.find(
+          (s) => s.platform === "github"
+        );
+        if (githubSync) {
+          try {
+            const connector = await connectorService.getConnectorById(
+              githubSync.connectorId || ""
+            );
+            if (connector && connector.enabled) {
+              await connectorService.syncToGitHub(connector, {
+                title: issue.title,
+                description: issue.description,
+                filePath: issue.filePath,
+                cloudFileUrl: issue.cloudFileUrl,
+                syncedTo: issue.syncedTo,
+                tags: issue.tags,
+                type: issue.type,
+              });
+              log.info(
+                `[Update] GitHub issue #${githubSync.externalId} updated`
+              );
+            }
+          } catch (error) {
+            log.warn(
+              "[Update] Failed to update GitHub issue:",
+              error instanceof Error ? error.message : String(error)
+            );
+          }
+        }
+
+        // Update Zoho bugs
+        const zohoSync = issue.syncedTo.find((s) => s.platform === "zoho");
+        if (zohoSync) {
+          try {
+            const connector = await connectorService.getConnectorById(
+              zohoSync.connectorId || ""
+            );
+            if (connector && connector.enabled) {
+              await connectorService.updateZohoBug(connector, zohoSync.externalId, {
+                title: updates.title,
+                description: updates.description,
+                tags: updates.tags,
+              });
+              log.info(`[Update] Zoho bug ${zohoSync.externalId} updated`);
+            }
+          } catch (error) {
+            log.warn(
+              "[Update] Failed to update Zoho bug:",
+              error instanceof Error ? error.message : String(error)
+            );
+          }
+        }
+      }
+
       // Trigger auto-sync to cloud if enabled (fire-and-forget)
       if (appSettingsStore.get("autoSync")) {
         syncService
@@ -2432,7 +2576,65 @@ function setupIPCHandlers() {
 
   ipcMain.handle("issue:delete", async (_event, { issueId }) => {
     try {
+      const user = sessionManager.getUser();
+      if (!user) {
+        throw new Error("User not authenticated");
+      }
+
+      // Get the issue to check if it's synced to any platforms
+      const issue = issueService.getIssueById(issueId);
+      if (!issue) {
+        throw new Error("Issue not found");
+      }
+
+      // Delete from external platforms
+      if (issue.syncedTo && issue.syncedTo.length > 0) {
+        for (const sync of issue.syncedTo) {
+          try {
+            if (sync.platform === "github") {
+              // Get GitHub connector
+              const connector = await connectorService.getConnectorById(
+                sync.connectorId || ""
+              );
+              if (connector && connector.enabled) {
+                const issueNumber = parseInt(sync.externalId, 10);
+                await connectorService.closeGitHubIssue(
+                  connector,
+                  issueNumber
+                );
+                log.info(
+                  `[Delete] Closed GitHub issue #${issueNumber}`
+                );
+              }
+            } else if (sync.platform === "zoho") {
+              // Get Zoho connector
+              const connector = await connectorService.getConnectorById(
+                sync.connectorId || ""
+              );
+              if (connector && connector.enabled) {
+                await connectorService.deleteZohoBug(
+                  connector,
+                  sync.externalId
+                );
+                log.info(`[Delete] Deleted Zoho bug ${sync.externalId}`);
+              }
+            }
+          } catch (platformError) {
+            // Log error but continue with deletion
+            log.warn(
+              `[Delete] Failed to delete from ${sync.platform}:`,
+              platformError instanceof Error ? platformError.message : String(platformError)
+            );
+          }
+        }
+      }
+
+      // Delete from cloud storage and database
+      await syncService.deleteFromCloud(user.id, issueId);
+
+      // Delete locally
       await issueService.deleteIssue(issueId);
+
       return { success: true };
     } catch (error) {
       const errorMessage =
@@ -3443,6 +3645,23 @@ function setupIPCHandlers() {
   ipcMain.handle("app:hide-window", () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.hide();
+    }
+  });
+
+  // Utility handler - Open external URL in default browser
+  ipcMain.handle("util:open-external", async (_event, { url }) => {
+    try {
+      if (!url) {
+        throw new Error("URL is required");
+      }
+      await shell.openExternal(url);
+      return { success: true };
+    } catch (error) {
+      log.error("[Util] Failed to open external URL:", url, error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to open URL",
+      };
     }
   });
 

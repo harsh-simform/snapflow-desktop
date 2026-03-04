@@ -2,45 +2,38 @@ import React, { useEffect, useState } from "react";
 import { Connector } from "../../types";
 import { Button } from "../ui/Button";
 
-interface ConnectorForm {
+interface ZohoPortal {
   id: string;
-  accessToken: string;
-  portalId: string;
-  projectId: string;
   name: string;
-  validating: boolean;
-  validationStatus: "idle" | "validating" | "success" | "error";
-  validationMessage: string;
+}
+
+interface ZohoProject {
+  id_string: string;
+  name: string;
+}
+
+type OAuthStage = "idle" | "waiting" | "selecting" | "saving";
+
+interface PendingZohoAuth {
+  portals: ZohoPortal[];
+  projects: ZohoProject[];
+  selectedPortalId: string;
+  selectedPortalName: string;
+  selectedProjectId: string;
+  selectedProjectName: string;
+  connectorName: string;
+  stage: OAuthStage;
+  error: string;
 }
 
 export function ZohoConnectorManager() {
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [loading, setLoading] = useState(true);
-  const [forms, setForms] = useState<ConnectorForm[]>([]);
   const [workspaceId, setWorkspaceId] = useState<string>("");
+  const [pendingAuth, setPendingAuth] = useState<PendingZohoAuth | null>(null);
 
-  const addNewForm = () => {
-    setForms([
-      ...forms,
-      {
-        id: Date.now().toString(),
-        accessToken: "",
-        portalId: "",
-        projectId: "",
-        name: "",
-        validating: false,
-        validationStatus: "idle",
-        validationMessage: "",
-      },
-    ]);
-  };
-
-  const removeForm = (formId: string) => {
-    setForms(forms.filter((f) => f.id !== formId));
-  };
-
-  const updateForm = (formId: string, updates: Partial<ConnectorForm>) => {
-    setForms(forms.map((f) => (f.id === formId ? { ...f, ...updates } : f)));
+  const log = (message: string, data?: unknown) => {
+    console.log(`[ZohoConnectorManager] ${message}`, data);
   };
 
   useEffect(() => {
@@ -53,24 +46,57 @@ export function ZohoConnectorManager() {
     }
   }, [workspaceId]);
 
+  // Listen for OAuth success
   useEffect(() => {
-    // Add first form automatically if no connectors and no forms exist
-    if (connectors.length === 0 && forms.length === 0 && !loading) {
-      addNewForm();
-    }
-  }, [connectors, forms, loading]);
+    const unsubscribe = window.api.onZohoOAuthSuccess(() => {
+      log("[OAuth] Success event received, fetching portals");
+      handleOAuthSuccess();
+    });
+    return unsubscribe;
+  }, []);
+
+  // Listen for OAuth error
+  useEffect(() => {
+    const unsubscribe = window.api.onZohoOAuthError((error: string) => {
+      log("[OAuth] Error event received:", error);
+      setPendingAuth((prev) =>
+        prev ? { ...prev, error, stage: "idle" } : null
+      );
+    });
+    return unsubscribe;
+  }, []);
 
   const getWorkspace = async () => {
     try {
+      log("Fetching workspace...");
       const tenantResult = await window.api.getUserTenant();
-      if (tenantResult.success && tenantResult.data?.id) {
-        const workspacesResult = await window.api.listWorkspaces(
-          tenantResult.data.id
-        );
-        if (workspacesResult.success && workspacesResult.data?.length > 0) {
-          setWorkspaceId(workspacesResult.data[0].id);
-        }
+      if (!tenantResult.success) {
+        log("Failed to get tenant:", tenantResult.error);
+        setLoading(false);
+        return;
       }
+      if (!tenantResult.data?.id) {
+        log("No tenant found");
+        setLoading(false);
+        return;
+      }
+
+      const workspacesResult = await window.api.listWorkspaces(
+        tenantResult.data.id
+      );
+      if (!workspacesResult.success) {
+        log("Failed to get workspaces:", workspacesResult.error);
+        setLoading(false);
+        return;
+      }
+      if (!workspacesResult.data?.length) {
+        log("No workspaces found");
+        setLoading(false);
+        return;
+      }
+
+      log("Workspace found:", workspacesResult.data[0].id);
+      setWorkspaceId(workspacesResult.data[0].id);
     } catch (error) {
       console.error("Failed to get workspace:", error);
       setLoading(false);
@@ -93,78 +119,204 @@ export function ZohoConnectorManager() {
     }
   };
 
-  const handleAddZoho = async (formId: string) => {
-    const formData = forms.find((f) => f.id === formId);
-    if (!formData) return;
-
-    updateForm(formId, {
-      validating: true,
-      validationStatus: "validating",
-      validationMessage: "Validating Zoho credentials...",
+  const handleStartOAuth = async () => {
+    log("Starting OAuth flow");
+    setPendingAuth({
+      portals: [],
+      projects: [],
+      selectedPortalId: "",
+      selectedPortalName: "",
+      selectedProjectId: "",
+      selectedProjectName: "",
+      connectorName: "",
+      stage: "waiting",
+      error: "",
     });
 
     try {
-      // Validate the connector first
-      const validationResult = await window.api.validateZohoConnector(
-        formData.accessToken,
-        formData.portalId
+      const result = await window.api.zohoSignIn();
+      if (!result.success) {
+        setPendingAuth((prev) =>
+          prev ? { ...prev, error: result.error || "Failed to start auth", stage: "idle" } : null
+        );
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      log("Failed to start OAuth:", error);
+      setPendingAuth((prev) =>
+        prev ? { ...prev, error: msg, stage: "idle" } : null
       );
+    }
+  };
 
-      if (!validationResult.success || !validationResult.data.isValid) {
-        updateForm(formId, {
-          validating: false,
-          validationStatus: "error",
-          validationMessage:
-            "Zoho validation failed. Please check your access token and portal ID.",
+  const handleOAuthSuccess = async () => {
+    log("OAuth successful, fetching portals");
+    try {
+      const result = await window.api.getZohoPortals();
+      if (result.success) {
+        // Debug: log raw API response
+        log("Raw API response:", result.data);
+        if (result.data && result.data.length > 0) {
+          log("First portal fields:", Object.keys(result.data[0]));
+          log("First portal data:", result.data[0]);
+        }
+
+        // Transform API response to match interface (API returns portal_name, we expect name)
+        const portals = (result.data || []).map((p: any, index: number) => {
+          const transformed = {
+            id: String(p.id || p.portal_id || "unknown-" + index),
+            name: p.portal_name || p.name || "Unnamed Portal",
+          };
+          log(`Portal ${index} transformed:`, transformed);
+          return transformed;
         });
-        return;
+        log("Portals after transformation:", portals);
+        setPendingAuth((prev) =>
+          prev
+            ? {
+                ...prev,
+                portals,
+                stage: "selecting",
+                error: "",
+              }
+            : null
+        );
+      } else {
+        setPendingAuth((prev) =>
+          prev ? { ...prev, error: result.error || "Failed to fetch portals", stage: "idle" } : null
+        );
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      log("Failed to fetch portals:", error);
+      setPendingAuth((prev) =>
+        prev ? { ...prev, error: msg, stage: "idle" } : null
+      );
+    }
+  };
+
+  const handlePortalSelect = async (portalId: string, portalName: string) => {
+    log("Portal selected:", { portalId, portalName });
+    setPendingAuth((prev) =>
+      prev
+        ? {
+            ...prev,
+            selectedPortalId: portalId,
+            selectedPortalName: portalName,
+            projects: [],
+            selectedProjectId: "",
+            selectedProjectName: "",
+          }
+        : null
+    );
+
+    try {
+      const result = await window.api.getZohoProjects(portalId);
+      if (result.success) {
+        // Transform API response to match interface (API might return project_name)
+        const projects = (result.data || []).map((p: any) => ({
+          id_string: p.id_string || p.id,
+          name: p.name || p.project_name,
+        }));
+        log("Projects fetched:", projects);
+        setPendingAuth((prev) =>
+          prev ? { ...prev, projects } : null
+        );
+      } else {
+        setPendingAuth((prev) =>
+          prev ? { ...prev, error: result.error || "Failed to fetch projects" } : null
+        );
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      log("Failed to fetch projects:", error);
+      setPendingAuth((prev) =>
+        prev ? { ...prev, error: msg } : null
+      );
+    }
+  };
+
+  const handleProjectSelect = (projectId: string, projectName: string) => {
+    log("Project selected:", { projectId, projectName });
+    setPendingAuth((prev) =>
+      prev
+        ? { ...prev, selectedProjectId: projectId, selectedProjectName: projectName }
+        : null
+    );
+  };
+
+  const handleSaveConnector = async () => {
+    if (!pendingAuth || !pendingAuth.selectedPortalId || !pendingAuth.selectedProjectId) {
+      return;
+    }
+
+    log("Saving connector");
+    setPendingAuth((prev) =>
+      prev ? { ...prev, stage: "saving" } : null
+    );
+
+    try {
+      // Get the Zoho tokens from the main process (fallback to empty if not available)
+      let accessToken = "";
+      let refreshToken = "";
+      let apiDomain = "";
+      try {
+        const tokenResult = await window.api.getZohoAccessToken?.();
+        if (tokenResult?.success) {
+          accessToken = tokenResult.accessToken || "";
+          refreshToken = tokenResult.refreshToken || "";
+          apiDomain = tokenResult.apiDomain || "";
+          log("Zoho tokens retrieved successfully");
+        } else {
+          log("Warning: Zoho tokens not available, will be applied from pending tokens");
+        }
+      } catch (tokenError) {
+        log("Warning: Failed to get Zoho tokens", tokenError);
+        // Continue anyway - the tokens will be applied from pendingZohoTokens in the IPC handler
       }
 
-      updateForm(formId, {
-        validationStatus: "success",
-        validationMessage:
-          "Credentials validated successfully! Adding connector...",
-      });
+      const connectorName =
+        pendingAuth.connectorName ||
+        `Zoho (${pendingAuth.selectedPortalName} / ${pendingAuth.selectedProjectName})`;
 
-      // Add the connector
       const result = await window.api.addConnector(workspaceId, {
-        name: formData.name || "Zoho Projects",
+        name: connectorName,
         type: "zoho",
         enabled: true,
         config: {
-          accessToken: formData.accessToken,
-          portalId: formData.portalId,
-          projectId: formData.projectId,
-          refreshToken: "", // Will be obtained from Zoho OAuth
-          clientId: "", // Will be configured server-side
-          clientSecret: "", // Will be configured server-side
+          accessToken,
+          refreshToken,
+          clientId: "",
+          clientSecret: "",
+          portalId: pendingAuth.selectedPortalId,
+          portalName: pendingAuth.selectedPortalName,
+          projectId: pendingAuth.selectedProjectId,
+          projectName: pendingAuth.selectedProjectName,
+          apiDomain,
         },
       });
 
       if (result.success) {
-        updateForm(formId, {
-          validationStatus: "success",
-          validationMessage: "Zoho Projects connected successfully!",
-        });
-        setTimeout(() => {
-          removeForm(formId);
-          loadConnectors();
-        }, 1500);
+        log("Connector saved successfully");
+        setPendingAuth(null);
+        await loadConnectors();
       } else {
-        updateForm(formId, {
-          validating: false,
-          validationStatus: "error",
-          validationMessage: `Failed to connect Zoho: ${result.error}`,
-        });
+        setPendingAuth((prev) =>
+          prev ? { ...prev, error: result.error || "Failed to save connector", stage: "selecting" } : null
+        );
       }
-    } catch {
-      updateForm(formId, {
-        validating: false,
-        validationStatus: "error",
-        validationMessage:
-          "Connection failed. Please check your internet connection and try again.",
-      });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      log("Failed to save connector:", error);
+      setPendingAuth((prev) =>
+        prev ? { ...prev, error: msg, stage: "selecting" } : null
+      );
     }
+  };
+
+  const handleCancel = () => {
+    log("Canceling OAuth");
+    setPendingAuth(null);
   };
 
   const handleToggleConnector = async (id: string, enabled: boolean) => {
@@ -194,9 +346,7 @@ export function ZohoConnectorManager() {
     }
   };
 
-  const canAddMore = connectors.length + forms.length < 1;
-
-  if (loading) {
+  if (loading && !workspaceId) {
     return (
       <div className="flex items-center justify-center py-16">
         <div className="flex flex-col items-center space-y-4">
@@ -219,15 +369,15 @@ export function ZohoConnectorManager() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Connected Zoho Projects */}
+    <div className="space-y-8">
+      {/* Connected Zoho connectors */}
       {connectors.map((connector) => (
         <div
           key={connector.id}
-          className="group relative bg-gradient-to-br from-gray-800/50 to-gray-900/50 border border-gray-700/50 rounded-2xl p-6 hover:border-gray-600/50 transition-all duration-300 backdrop-blur-sm max-w-4xl"
+          className="group relative bg-gradient-to-br from-gray-800/40 to-gray-900/40 border border-orange-600/20 hover:border-orange-500/40 rounded-2xl p-7 transition-all duration-300 backdrop-blur-sm max-w-4xl shadow-lg hover:shadow-orange-500/5"
         >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4 flex-1">
+          <div className="flex items-center justify-between gap-6">
+            <div className="flex items-center space-x-5 flex-1">
               <div className="w-12 h-12 bg-gradient-to-br from-orange-600/30 to-orange-700/20 border border-orange-600/50 rounded-xl flex items-center justify-center group-hover:border-orange-500/50 transition-all duration-300">
                 <svg
                   className="w-6 h-6 text-orange-400 group-hover:text-orange-300"
@@ -242,8 +392,13 @@ export function ZohoConnectorManager() {
                 <h3 className="text-lg font-bold text-gray-100 group-hover:text-white transition-colors truncate">
                   {connector.name}
                 </h3>
-                <p className="text-sm text-gray-400 group-hover:text-gray-300 transition-colors font-mono truncate">
-                  Portal: {(connector.config as any).portalId}
+                <p className="text-sm text-gray-400 group-hover:text-gray-300 transition-colors truncate mt-1">
+                  <span className="inline-block mr-3">
+                    📁 {(connector.config as any).portalName || (connector.config as any).portalId}
+                  </span>
+                  <span className="inline-block">
+                    📌 {(connector.config as any).projectName || (connector.config as any).projectId}
+                  </span>
                 </p>
               </div>
 
@@ -304,279 +459,230 @@ export function ZohoConnectorManager() {
         </div>
       ))}
 
-      {/* Connector Forms */}
-      {forms.map((form, index) => (
-        <div
-          key={form.id}
-          className="bg-gradient-to-br from-gray-800/60 to-gray-900/60 border border-gray-700/50 rounded-2xl p-6 backdrop-blur-sm max-w-4xl"
-        >
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleAddZoho(form.id);
-            }}
-            className="space-y-6"
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-orange-600/20 border border-orange-500/30 rounded-xl flex items-center justify-center">
-                  <svg
-                    className="w-5 h-5 text-orange-400"
-                    fill="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z" />
-                  </svg>
-                </div>
-                <h3 className="text-lg font-semibold text-gray-100">
-                  Connect Zoho Projects
-                </h3>
-              </div>
-              {forms.length > 1 && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => removeForm(form.id)}
-                  className="hover:bg-gray-700/50"
+      {/* OAuth Flow - Stage 1: Idle (Sign In Button) */}
+      {!pendingAuth && connectors.length === 0 && (
+        <div className="bg-gradient-to-br from-gray-800/60 to-gray-900/60 border border-gray-700/50 rounded-2xl p-6 backdrop-blur-sm max-w-4xl">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-orange-600/20 border border-orange-500/30 rounded-xl flex items-center justify-center">
+                <svg
+                  className="w-5 h-5 text-orange-400"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
                 >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
-                </Button>
-              )}
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-100">
+                Connect Zoho Projects
+              </h3>
             </div>
+          </div>
 
-            <div className="grid gap-5">
-              {/* Display Name & Access Token in one row */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                <div>
-                  <label className="block text-sm font-medium text-gray-100 mb-2">
-                    Display Name{" "}
-                    <span className="text-gray-400 font-normal">
-                      (Optional)
-                    </span>
-                  </label>
-                  <input
-                    type="text"
-                    value={form.name}
-                    onChange={(e) =>
-                      updateForm(form.id, { name: e.target.value })
-                    }
-                    className="w-full px-4 py-3 bg-gray-900/60 border border-gray-700/50 text-gray-100 rounded-xl focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50 outline-none transition-all duration-200"
-                    placeholder="My Zoho Workspace"
-                  />
-                </div>
+          <p className="text-sm text-gray-400 mb-6">
+            Click below to sign in with your Zoho account and authorize SnapFlow to access your projects.
+          </p>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-100 mb-2">
-                    Access Token <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    type="password"
-                    required
-                    value={form.accessToken}
-                    onChange={(e) =>
-                      updateForm(form.id, { accessToken: e.target.value })
-                    }
-                    className="w-full px-4 py-3 bg-gray-900/60 border border-gray-700/50 text-gray-100 rounded-xl focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50 outline-none transition-all duration-200 font-mono"
-                    placeholder="Your Zoho API token"
-                  />
-                </div>
-              </div>
-
-              {/* Help text for token */}
-              <div className="p-3 bg-orange-900/10 border border-orange-800/20 rounded-lg -mt-2">
-                <p className="text-xs text-orange-300/80">
-                  💡 Get your access token from Zoho Projects → Settings →
-                  Developer → API Token
-                </p>
-              </div>
-
-              {/* Portal ID and Project ID */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-100 mb-2">
-                    Portal ID <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={form.portalId}
-                    onChange={(e) =>
-                      updateForm(form.id, { portalId: e.target.value })
-                    }
-                    className="w-full px-4 py-3 bg-gray-900/60 border border-gray-700/50 text-gray-100 rounded-xl focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50 outline-none transition-all duration-200"
-                    placeholder="Your portal ID"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-100 mb-2">
-                    Project ID <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={form.projectId}
-                    onChange={(e) =>
-                      updateForm(form.id, { projectId: e.target.value })
-                    }
-                    className="w-full px-4 py-3 bg-gray-900/60 border border-gray-700/50 text-gray-100 rounded-xl focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50 outline-none transition-all duration-200"
-                    placeholder="Your project ID"
-                  />
-                </div>
-              </div>
-
-              {/* Validation Status */}
-              {form.validationStatus !== "idle" && (
-                <div
-                  className={`p-4 rounded-xl border ${
-                    form.validationStatus === "success"
-                      ? "bg-green-900/20 border-green-800/30"
-                      : form.validationStatus === "error"
-                        ? "bg-red-900/20 border-red-800/30"
-                        : "bg-orange-900/20 border-orange-800/30"
-                  }`}
+          <div className="flex justify-end">
+            <Button
+              onClick={handleStartOAuth}
+              variant="primary"
+              size="lg"
+              leftIcon={
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
                 >
-                  <div className="flex items-center space-x-3">
-                    {form.validationStatus === "validating" && (
-                      <svg
-                        className="w-5 h-5 text-orange-400 animate-spin"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                        />
-                      </svg>
-                    )}
-                    {form.validationStatus === "success" && (
-                      <svg
-                        className="w-5 h-5 text-green-400"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M5 13l4 4L19 7"
-                        />
-                      </svg>
-                    )}
-                    {form.validationStatus === "error" && (
-                      <svg
-                        className="w-5 h-5 text-red-400"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                        />
-                      </svg>
-                    )}
-                    <span
-                      className={`text-sm font-medium ${
-                        form.validationStatus === "success"
-                          ? "text-green-300"
-                          : form.validationStatus === "error"
-                            ? "text-red-300"
-                            : "text-orange-300"
-                      }`}
-                    >
-                      {form.validationMessage}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* Action Button */}
-              <div className="flex justify-end">
-                <Button
-                  type="submit"
-                  variant="primary"
-                  size="lg"
-                  disabled={
-                    form.validating ||
-                    !form.accessToken ||
-                    !form.portalId ||
-                    !form.projectId
-                  }
-                  isLoading={form.validating}
-                  leftIcon={
-                    !form.validating && (
-                      <svg
-                        className="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M12 4v16m8-8H4"
-                        />
-                      </svg>
-                    )
-                  }
-                  className="px-8"
-                >
-                  {form.validating
-                    ? "Connecting Zoho..."
-                    : "Connect Zoho Projects"}
-                </Button>
-              </div>
-            </div>
-          </form>
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
+                  />
+                </svg>
+              }
+              className="px-8"
+            >
+              Sign In with Zoho
+            </Button>
+          </div>
         </div>
-      ))}
+      )}
 
-      {/* Add Another Button */}
-      {canAddMore && (
-        <div className="max-w-4xl">
-          <Button
-            variant="outline"
-            size="md"
-            onClick={addNewForm}
-            className="w-full border-2 border-dashed hover:border-orange-500/50 hover:bg-orange-500/5"
-            leftIcon={
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 4v16m8-8H4"
-                />
+      {/* Limit Reached Message */}
+      {!pendingAuth && connectors.length > 0 && (
+        <div className="bg-orange-900/20 border border-orange-700/50 rounded-2xl p-6 backdrop-blur-sm max-w-4xl">
+          <div className="flex items-center space-x-3">
+            <div className="flex-shrink-0">
+              <svg className="w-6 h-6 text-orange-400" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
               </svg>
-            }
-          >
-            Add Zoho Projects (1/1)
-          </Button>
+            </div>
+            <div>
+              <h3 className="text-sm font-medium text-orange-400">Zoho connector already added</h3>
+              <p className="text-xs text-orange-300 mt-1">Only one Zoho connector per workspace is allowed. Delete the existing one to add a different project.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* OAuth Flow - Stage 2: Waiting */}
+      {pendingAuth && pendingAuth.stage === "waiting" && (
+        <div className="bg-gradient-to-br from-orange-900/20 to-gray-900/60 border border-orange-700/50 rounded-2xl p-8 backdrop-blur-sm max-w-4xl">
+          <div className="flex flex-col items-center space-y-6">
+            <div className="relative">
+              <div className="w-12 h-12 border-3 border-orange-500/20 border-t-orange-500 rounded-full animate-spin"></div>
+              <div
+                className="absolute inset-0 w-12 h-12 border-3 border-transparent border-t-orange-400/40 rounded-full animate-spin"
+                style={{
+                  animationDuration: "1.5s",
+                  animationDirection: "reverse",
+                }}
+              ></div>
+            </div>
+            <div className="text-center">
+              <h3 className="text-lg font-semibold text-gray-100 mb-2">
+                Authorizing with Zoho...
+              </h3>
+              <p className="text-sm text-gray-400">
+                Complete the authorization in your browser window
+              </p>
+            </div>
+            <Button
+              onClick={handleCancel}
+              variant="outline"
+              size="sm"
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* OAuth Flow - Stage 3: Selecting Portal & Project or Saving */}
+      {pendingAuth && (pendingAuth.stage === "selecting" || pendingAuth.stage === "saving") && (
+        <div className="bg-gradient-to-br from-gray-800/60 to-gray-900/60 border border-gray-700/50 rounded-2xl p-6 backdrop-blur-sm max-w-4xl">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-orange-600/20 border border-orange-500/30 rounded-xl flex items-center justify-center">
+                <svg
+                  className="w-5 h-5 text-orange-400"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-100">
+                Select Portal & Project
+              </h3>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            {/* Portal Selection */}
+            <div>
+              <label className="block text-sm font-medium text-gray-100 mb-2">
+                Zoho Portal <span className="text-red-400">*</span>
+              </label>
+              <select
+                value={pendingAuth.selectedPortalId}
+                onChange={(e) => {
+                  const portal = pendingAuth.portals.find(
+                    (p) => p.id === e.target.value
+                  );
+                  if (portal) {
+                    handlePortalSelect(portal.id, portal.name);
+                  }
+                }}
+                className="w-full px-4 py-3 bg-gray-900/60 border border-gray-700/50 text-gray-100 rounded-xl focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50 outline-none transition-all duration-200"
+              >
+                <option value="">Choose a portal...</option>
+                {pendingAuth.portals.map((portal) => (
+                  <option key={portal.id} value={portal.id}>
+                    {portal.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Project Selection */}
+            {pendingAuth.selectedPortalId && (
+              <div>
+                <label className="block text-sm font-medium text-gray-100 mb-2">
+                  Project <span className="text-red-400">*</span>
+                </label>
+                <select
+                  value={pendingAuth.selectedProjectId}
+                  onChange={(e) => {
+                    const project = pendingAuth.projects.find(
+                      (p) => p.id_string === e.target.value
+                    );
+                    if (project) {
+                      handleProjectSelect(project.id_string, project.name);
+                    }
+                  }}
+                  className="w-full px-4 py-3 bg-gray-900/60 border border-gray-700/50 text-gray-100 rounded-xl focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50 outline-none transition-all duration-200"
+                >
+                  <option value="">Choose a project...</option>
+                  {pendingAuth.projects.map((project) => (
+                    <option key={project.id_string} value={project.id_string}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Connector Name */}
+            <div>
+              <label className="block text-sm font-medium text-gray-100 mb-2">
+                Display Name <span className="text-gray-400 font-normal">(Optional)</span>
+              </label>
+              <input
+                type="text"
+                value={pendingAuth.connectorName}
+                onChange={(e) =>
+                  setPendingAuth((prev) =>
+                    prev ? { ...prev, connectorName: e.target.value } : null
+                  )
+                }
+                placeholder="My Zoho Connector"
+                className="w-full px-4 py-3 bg-gray-900/60 border border-gray-700/50 text-gray-100 rounded-xl focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50 outline-none transition-all duration-200"
+              />
+            </div>
+
+            {/* Error Message */}
+            {pendingAuth.error && (
+              <div className="p-4 bg-red-900/20 border border-red-800/30 rounded-lg">
+                <p className="text-sm text-red-300">{pendingAuth.error}</p>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex justify-end gap-3">
+              <Button
+                onClick={handleCancel}
+                variant="outline"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSaveConnector}
+                variant="primary"
+                disabled={
+                  pendingAuth.stage === "saving" ||
+                  !pendingAuth.selectedPortalId ||
+                  !pendingAuth.selectedProjectId
+                }
+                isLoading={pendingAuth.stage === "saving"}
+              >
+                {pendingAuth.stage === "saving" ? "Saving..." : "Save Connector"}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

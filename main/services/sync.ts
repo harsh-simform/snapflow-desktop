@@ -1,5 +1,7 @@
 import { getSupabase } from "../utils/supabase";
 import { issueService } from "./issues";
+import { tenantService } from "./tenant";
+import { workspaceService } from "./workspace";
 import fs from "fs/promises";
 import path from "path";
 import log from "electron-log";
@@ -90,7 +92,8 @@ export class SyncService {
   private async createSyncHistory(
     userId: string,
     syncType: "push" | "pull" | "full",
-    totalCount: number
+    totalCount: number,
+    workspaceId?: string
   ): Promise<string | null> {
     const supabase = getSupabase();
     if (!supabase) {
@@ -98,9 +101,20 @@ export class SyncService {
     }
 
     try {
+      // Get workspace ID if not provided
+      let wsId = workspaceId;
+      if (!wsId) {
+        wsId = await this.getWorkspaceIdForUser(userId);
+        if (!wsId) {
+          log.warn("[Sync] Could not determine workspace for sync history");
+          return null;
+        }
+      }
+
       const { data, error } = await supabase
         .from("sync_history")
         .insert({
+          workspace_id: wsId,
           initiated_by: userId,
           sync_type: syncType,
           status: "in_progress",
@@ -284,6 +298,33 @@ export class SyncService {
   }
 
   /**
+   * Get the workspace ID for a user (MVP: each user has 1 workspace)
+   */
+  private async getWorkspaceIdForUser(userId: string): Promise<string | null> {
+    try {
+      // Get user's tenant
+      const tenant = await tenantService.getTenantByOwner(userId);
+      if (!tenant) {
+        log.warn(`[Sync] No tenant found for user ${userId}`);
+        return null;
+      }
+
+      // Get workspaces for tenant
+      const workspaces = await workspaceService.listWorkspaces(tenant.id);
+      if (!workspaces || workspaces.length === 0) {
+        log.warn(`[Sync] No workspaces found for tenant ${tenant.id}`);
+        return null;
+      }
+
+      // Return first workspace ID (MVP: single workspace per tenant)
+      return workspaces[0].id;
+    } catch (error) {
+      log.error(`[Sync] Error getting workspace for user ${userId}:`, error);
+      return null;
+    }
+  }
+
+  /**
    * Download a file from cloud storage URL to local storage
    */
   private async downloadFileFromCloud(
@@ -324,6 +365,76 @@ export class SyncService {
     } catch (error) {
       log.error("[Sync] Error downloading file from cloud:", error);
       return null;
+    }
+  }
+
+  /**
+   * Delete a snap from cloud storage and Supabase database
+   */
+  async deleteFromCloud(userId: string, issueId: string): Promise<void> {
+    const supabase = getSupabase();
+    if (!supabase) {
+      log.error("[Sync] Supabase client not initialized");
+      return;
+    }
+
+    try {
+      // Get workspace ID
+      const wsId = await this.getWorkspaceIdForUser(userId);
+      if (!wsId) {
+        log.warn("[Sync] No workspace found, skipping cloud delete");
+        return;
+      }
+
+      // Delete from Supabase database
+      log.info(`[Sync] Deleting snap ${issueId} from database...`);
+      const { error: dbError } = await supabase
+        .from("snaps")
+        .delete()
+        .eq("id", issueId)
+        .eq("workspace_id", wsId);
+
+      if (dbError) {
+        log.error("[Sync] Failed to delete from database:", dbError);
+      } else {
+        log.info("[Sync] ✓ Deleted from database");
+      }
+
+      // Delete from Supabase storage
+      log.info(`[Sync] Deleting snap files from storage...`);
+      const storagePath = `${userId}/${issueId}`;
+
+      // List all files under this path
+      const { data: files, error: listError } = await supabase.storage
+        .from(BUCKET_NAME)
+        .list(storagePath);
+
+      if (listError) {
+        log.warn("[Sync] Failed to list storage files:", listError);
+      } else if (files && files.length > 0) {
+        // Build full paths for deletion
+        const filePaths = files
+          .filter((f) => f.name !== ".emptyFolderPlaceholder") // Skip placeholder files
+          .map((f) => `${storagePath}/${f.name}`);
+
+        if (filePaths.length > 0) {
+          log.info(`[Sync] Removing ${filePaths.length} files from storage...`);
+          const { error: deleteError } = await supabase.storage
+            .from(BUCKET_NAME)
+            .remove(filePaths);
+
+          if (deleteError) {
+            log.warn("[Sync] Failed to delete from storage:", deleteError);
+          } else {
+            log.info("[Sync] ✓ Deleted files from storage");
+          }
+        }
+      }
+
+      log.info("[Sync] ✓ Cloud deletion complete");
+    } catch (error) {
+      log.error("[Sync] Error deleting from cloud:", error);
+      // Fail gracefully - log the error but don't throw
     }
   }
 
@@ -372,6 +483,18 @@ export class SyncService {
     }
     log.info("[Sync] Storage bucket is ready!");
 
+    // Get workspace ID for user
+    const workspaceId = await this.getWorkspaceIdForUser(userId);
+    if (!workspaceId) {
+      const error =
+        "No workspace found for user. Please complete onboarding first.";
+      log.error("[Sync]", error);
+      result.success = false;
+      result.errors.push(error);
+      return result;
+    }
+    log.info("[Sync] Using workspace:", workspaceId);
+
     // Get all local issues for this user
     const localIssues = issueService.getIssues(userId);
 
@@ -379,7 +502,8 @@ export class SyncService {
     const syncHistoryId = await this.createSyncHistory(
       userId,
       "push",
-      localIssues.length
+      localIssues.length,
+      workspaceId
     );
     result.syncHistoryId = syncHistoryId || undefined;
 
@@ -459,7 +583,7 @@ export class SyncService {
 
           // Check if issue already exists in Supabase
           const { data: existingIssue } = await supabase
-            .from("issues")
+            .from("snaps")
             .select("id, cloud_file_url, cloud_thumbnail_url")
             .eq("id", issue.id)
             .eq("created_by", userId)
@@ -467,6 +591,7 @@ export class SyncService {
 
           const issueData = {
             id: issue.id,
+            workspace_id: workspaceId,
             created_by: userId,
             title: issue.title,
             description: issue.description || null,
@@ -495,7 +620,7 @@ export class SyncService {
             // Update existing issue
             log.info(`[Sync] Updating existing issue in database: ${issue.id}`);
             const { error } = await supabase
-              .from("issues")
+              .from("snaps")
               .update(issueData)
               .eq("id", issue.id)
               .eq("created_by", userId);
@@ -511,7 +636,7 @@ export class SyncService {
           } else {
             // Insert new issue
             log.info(`[Sync] Inserting new issue into database: ${issue.id}`);
-            const { error } = await supabase.from("issues").insert(issueData);
+            const { error } = await supabase.from("snaps").insert(issueData);
 
             if (error) {
               log.error(
@@ -534,7 +659,9 @@ export class SyncService {
             localUpdateData.cloudThumbnailUrl = cloudThumbnailUrl;
           }
 
-          await issueService.updateIssue(issue.id, localUpdateData);
+          log.info(`[Sync] Updating local snap ${issue.id} with:`, localUpdateData);
+          const updatedSnap = await issueService.updateIssue(issue.id, localUpdateData);
+          log.info(`[Sync] ✓ Snap updated successfully. New syncStatus:`, updatedSnap.syncStatus);
           result.syncedCount++;
         } catch (error) {
           result.failedCount++;
@@ -601,15 +728,29 @@ export class SyncService {
       errors: [],
     };
 
+    // Get workspace ID for user
+    const workspaceId = await this.getWorkspaceIdForUser(userId);
+    if (!workspaceId) {
+      log.warn("[Sync] No workspace found for user, skipping fetch");
+      // This is not a fatal error for pull — user just has no workspace yet
+      return result;
+    }
+
     // Create sync history record
-    const syncHistoryId = await this.createSyncHistory(userId, "pull", 0);
+    const syncHistoryId = await this.createSyncHistory(
+      userId,
+      "pull",
+      0,
+      workspaceId
+    );
     result.syncHistoryId = syncHistoryId || undefined;
 
     try {
-      // Fetch all issues from Supabase for this user
+      // Fetch all issues from Supabase for this user's workspace
       const { data: cloudIssues, error } = await supabase
-        .from("issues")
+        .from("snaps")
         .select("*")
+        .eq("workspace_id", workspaceId)
         .eq("created_by", userId)
         .order("timestamp", { ascending: false });
 
@@ -800,6 +941,63 @@ export class SyncService {
     }
 
     return result;
+  }
+
+  /**
+   * Update snap metadata in Supabase (for title/description/tags changes)
+   */
+  async updateSnapMetadata(
+    snapId: string,
+    userId: string,
+    updates: {
+      title?: string;
+      description?: string;
+      tags?: string[];
+    }
+  ): Promise<boolean> {
+    const supabase = getSupabase();
+    if (!supabase) {
+      log.error("[Sync] Supabase client not initialized");
+      return false;
+    }
+
+    try {
+      // Get workspace ID for user
+      const workspaceId = await this.getWorkspaceIdForUser(userId);
+      if (!workspaceId) {
+        log.warn("[Sync] No workspace found, skipping metadata update");
+        return false;
+      }
+
+      const updateData: Record<string, unknown> = {};
+      if (updates.title !== undefined) updateData.title = updates.title;
+      if (updates.description !== undefined)
+        updateData.description = updates.description;
+      if (updates.tags !== undefined) updateData.tags = updates.tags;
+
+      log.info(`[Sync] Updating snap metadata for ${snapId}:`, updateData);
+
+      const { error } = await supabase
+        .from("snaps")
+        .update(updateData)
+        .eq("id", snapId)
+        .eq("workspace_id", workspaceId)
+        .eq("created_by", userId);
+
+      if (error) {
+        log.error(
+          `[Sync] Failed to update snap metadata in database:`,
+          error
+        );
+        return false;
+      }
+
+      log.info(`[Sync] ✓ Snap metadata updated in database: ${snapId}`);
+      return true;
+    } catch (error) {
+      log.error("[Sync] Error updating snap metadata:", error);
+      return false;
+    }
   }
 
   /**

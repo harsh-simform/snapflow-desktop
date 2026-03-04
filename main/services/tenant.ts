@@ -68,6 +68,19 @@ export class TenantService {
 
     if (error) {
       log.error("[Tenant Service] ✗ Create error:", error.message);
+
+      // Provide user-friendly error messages for common constraint violations
+      if (error.message.includes("tenants_name_key")) {
+        throw new Error(
+          `Organization name "${name}" is already taken. Please choose a different name.`
+        );
+      }
+      if (error.message.includes("tenants_slug_key")) {
+        throw new Error(
+          "This organization name (or slug) is already taken. Please choose a different name."
+        );
+      }
+
       throw new Error(error.message);
     }
 
@@ -142,6 +155,127 @@ export class TenantService {
     }
 
     return this.mapSupabaseTenant(data);
+  }
+
+  /**
+   * Update tenant details (name and/or description)
+   * Only the tenant owner or workspace admin can update
+   */
+  async updateTenant(
+    tenantId: string,
+    userId: string,
+    updates: { name?: string; description?: string }
+  ): Promise<Tenant> {
+    log.info("[Tenant Service] === UPDATE TENANT START ===");
+    log.info("[Tenant Service] Tenant ID:", tenantId);
+    log.info("[Tenant Service] User ID:", userId);
+
+    const supabase = getSupabase();
+    if (!supabase) {
+      log.error("[Tenant Service] ✗ Supabase not configured");
+      throw new Error(
+        "Supabase is not configured. Please check your environment variables."
+      );
+    }
+
+    // Verify user is the tenant owner or an admin in any workspace within the tenant
+    const tenant = await this.getTenantById(tenantId);
+    if (!tenant) {
+      throw new Error("Tenant not found");
+    }
+
+    const isOwner = tenant.ownerId === userId;
+
+    // Check if user is an admin in any workspace within this tenant
+    let isAdmin = false;
+    if (!isOwner) {
+      const { data: adminMembers } = await supabase
+        .from("workspace_members")
+        .select(
+          `
+          id,
+          workspace_id,
+          workspaces(tenant_id)
+        `
+        )
+        .eq("role", "admin")
+        .eq("user_id", userId);
+
+      isAdmin = (adminMembers || []).some(
+        (m: any) => m.workspaces?.tenant_id === tenantId
+      );
+    }
+
+    if (!isOwner && !isAdmin) {
+      log.error(
+        "[Tenant Service] ✗ User is not tenant owner or admin. Owner:",
+        tenant.ownerId,
+        "User:",
+        userId
+      );
+      throw new Error(
+        "Only the tenant owner or workspace admin can update tenant details"
+      );
+    }
+
+    const updateData: Record<string, unknown> = {};
+
+    // If name is being updated, also update the slug
+    if (updates.name !== undefined) {
+      updateData.name = updates.name;
+      // Auto-generate slug from name
+      let newSlug = slugify(updates.name);
+      let originalSlug = newSlug;
+      let attempt = 2;
+
+      // Check for unique slug
+      while (true) {
+        const { data: existing } = await supabase
+          .from("tenants")
+          .select("id")
+          .eq("slug", newSlug)
+          .neq("id", tenantId) // Exclude current tenant
+          .single();
+
+        if (!existing) {
+          break;
+        }
+
+        newSlug = `${originalSlug}-${attempt}`;
+        attempt++;
+      }
+
+      updateData.slug = newSlug;
+      log.info("[Tenant Service] New slug:", newSlug);
+    }
+
+    if (updates.description !== undefined) {
+      updateData.description = updates.description || null;
+    }
+
+    log.info("[Tenant Service] Updates:", updateData);
+
+    const { data, error } = await supabase
+      .from("tenants")
+      .update(updateData)
+      .eq("id", tenantId)
+      .select()
+      .single();
+
+    if (error) {
+      log.error("[Tenant Service] ✗ Update error:", error.message);
+      throw new Error(error.message);
+    }
+
+    if (!data) {
+      log.error("[Tenant Service] ✗ No tenant data returned");
+      throw new Error("Failed to update tenant");
+    }
+
+    const updatedTenant = this.mapSupabaseTenant(data);
+    log.info("[Tenant Service] ✓ Tenant updated successfully");
+    log.info("[Tenant Service] === UPDATE TENANT END ===");
+    return updatedTenant;
   }
 
   /**

@@ -39,12 +39,16 @@ const api = {
   createTenant: (name: string, description?: string) =>
     ipcRenderer.invoke("tenant:create", { name, description }),
   getUserTenant: () => ipcRenderer.invoke("tenant:get"),
+  updateTenant: (tenantId: string, name?: string, description?: string) =>
+    ipcRenderer.invoke("tenant:update", { tenantId, name, description }),
 
   // Workspace methods
   createWorkspace: (tenantId: string, name: string, description?: string) =>
     ipcRenderer.invoke("workspace:create", { tenantId, name, description }),
   listWorkspaces: (tenantId: string) =>
     ipcRenderer.invoke("workspace:list", { tenantId }),
+  updateWorkspace: (workspaceId: string, name?: string, description?: string) =>
+    ipcRenderer.invoke("workspace:update", { workspaceId, name, description }),
   inviteTeamMember: (
     workspaceId: string,
     email: string,
@@ -56,6 +60,8 @@ const api = {
 
   // Onboarding
   getOnboardingStatus: () => ipcRenderer.invoke("onboarding:get-status"),
+  setOnboardingStep: (step: number) =>
+    ipcRenderer.invoke("onboarding:set-step", { step }),
 
   // Issue methods
   createIssue: (
@@ -308,6 +314,9 @@ const api = {
     return () =>
       ipcRenderer.removeListener("auto-sync-completed", subscription);
   },
+
+  // Utility methods
+  openExternalUrl: (url: string) => ipcRenderer.invoke("util:open-external", { url }),
 };
 
 contextBridge.exposeInMainWorld("ipc", handler);

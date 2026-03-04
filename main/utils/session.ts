@@ -28,11 +28,12 @@ import { syncService } from "../services/sync";
 interface SessionCache {
   userId: string | null;
   user: AuthUser | null;
+  expiresAt: number | null; // UNIX timestamp in milliseconds
 }
 
 const sessionStore = new Store<SessionCache>({
   name: "snapflow-session",
-  defaults: { userId: null, user: null },
+  defaults: { userId: null, user: null, expiresAt: null },
 });
 
 log.info("[Session] Store initialised");
@@ -43,6 +44,7 @@ class SessionManager {
   private currentUser: AuthUser | null = null;
   private listenerAttached = false;
   private isClearing = false;
+  private initializationComplete = false;
 
   // ── Startup ────────────────────────────────────────────────────────────────
 
@@ -102,9 +104,22 @@ class SessionManager {
       return;
     }
 
+    // Check if stored token has expired
+    if (this.isTokenExpired()) {
+      log.warn("[Session] Stored session token has expired");
+      await this.clearUser();
+      this.attachAuthListener();
+      return;
+    }
+
     // Session found — validate the user against the server.
     log.info("[Session] Stored session found, validating user...");
     try {
+      // Extract and cache token expiry time
+      if (session.expires_at) {
+        const expiresAt = session.expires_at * 1000; // Convert to milliseconds
+        (sessionStore as any).set("expiresAt", expiresAt);
+      }
       let user = await authService.getCurrentUser();
 
       if (!user) {
@@ -135,6 +150,8 @@ class SessionManager {
     }
 
     this.attachAuthListener();
+    this.initializationComplete = true;
+    log.info("[Session] ✓ Initialization complete");
   }
 
   // ── Auth state listener ────────────────────────────────────────────────────
@@ -156,8 +173,14 @@ class SessionManager {
       switch (event) {
         case "TOKEN_REFRESHED":
           // Tokens are already written back to electron-store by the SDK adapter.
-          // Nothing extra needed — just log it.
-          log.info("[Session] Token refreshed ✓");
+          // Update the expiry time in our cache.
+          if (session?.expires_at) {
+            const expiresAt = session.expires_at * 1000; // Convert to milliseconds
+            (sessionStore as any).set("expiresAt", expiresAt);
+            log.info("[Session] Token refreshed ✓ (expires at", new Date(expiresAt).toISOString(), ")");
+          } else {
+            log.info("[Session] Token refreshed ✓");
+          }
           break;
 
         case "SIGNED_IN":
@@ -187,6 +210,12 @@ class SessionManager {
                   user.email
                 );
                 await this.applyUser(user);
+                // Store token expiry time
+                if (session.expires_at) {
+                  const expiresAt = session.expires_at * 1000; // Convert to milliseconds
+                  (sessionStore as any).set("expiresAt", expiresAt);
+                  log.info("[Session] SIGNED_IN: Session expires at", new Date(expiresAt).toISOString());
+                }
                 log.info("[Session] SIGNED_IN: User applied successfully");
               } else {
                 log.info("[Session] SIGNED_IN: User already set, skipping");
@@ -238,6 +267,10 @@ class SessionManager {
     return this.currentUser !== null;
   }
 
+  isInitialized(): boolean {
+    return this.initializationComplete;
+  }
+
   /**
    * Synchronous pre-flight check — reads from cache without any network call.
    * Used by background.ts to decide the initial route before initialize() runs.
@@ -278,6 +311,21 @@ class SessionManager {
   // ── Private helpers ────────────────────────────────────────────────────────
 
   /**
+   * Check if the stored token has expired (or is about to expire within 5 minutes).
+   * Returns true if expired or expiry time is unknown.
+   */
+  private isTokenExpired(): boolean {
+    const expiresAt = ((sessionStore as any).get("expiresAt") as
+      | number
+      | undefined) ?? null;
+    if (!expiresAt) return false; // No expiry info, assume valid
+
+    const now = Date.now();
+    const bufferMs = 5 * 60 * 1000; // 5-minute buffer
+    return now + bufferMs >= expiresAt;
+  }
+
+  /**
    * Apply a resolved user: set in-memory state, update storage manager,
    * and write the user profile to the cache store.
    */
@@ -314,6 +362,27 @@ class SessionManager {
   private clearCache(): void {
     (sessionStore as any).set("user", null);
     (sessionStore as any).set("userId", null);
+    (sessionStore as any).set("expiresAt", null);
+  }
+
+  /**
+   * Returns the session expiry time (UNIX timestamp in ms), or null if unavailable.
+   * Used by the renderer to show expiry warnings.
+   */
+  getSessionExpiryTime(): number | null {
+    return ((sessionStore as any).get("expiresAt") as number | undefined) ?? null;
+  }
+
+  /**
+   * Returns true if session is expiring within the next N minutes (default 30).
+   */
+  isSessionExpiringsoon(minutesBuffer: number = 30): boolean {
+    const expiresAt = this.getSessionExpiryTime();
+    if (!expiresAt) return false;
+
+    const now = Date.now();
+    const bufferMs = minutesBuffer * 60 * 1000;
+    return now + bufferMs >= expiresAt;
   }
 
   /** Download cloud captures for the user after login — best-effort. */

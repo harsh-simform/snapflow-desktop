@@ -16,6 +16,7 @@ DROP TABLE IF EXISTS latest_gmail_syncs CASCADE;
 -- ============================================================================
 DROP TABLE IF EXISTS sync_history CASCADE;
 DROP TABLE IF EXISTS connectors CASCADE;
+DROP TABLE IF EXISTS snaps CASCADE;
 DROP TABLE IF EXISTS issues CASCADE;
 DROP TABLE IF EXISTS workspace_members CASCADE;
 DROP TABLE IF EXISTS workspaces CASCADE;
@@ -25,6 +26,7 @@ DROP TABLE IF EXISTS tenants CASCADE;
 -- DROP AND RECREATE TYPES (after tables are dropped)
 -- ============================================================================
 DROP TYPE IF EXISTS connector_type CASCADE;
+DROP TYPE IF EXISTS snap_type CASCADE;
 DROP TYPE IF EXISTS issue_type CASCADE;
 DROP TYPE IF EXISTS sync_status CASCADE;
 DROP TYPE IF EXISTS sync_type CASCADE;
@@ -32,7 +34,7 @@ DROP TYPE IF EXISTS sync_job_status CASCADE;
 DROP TYPE IF EXISTS user_role CASCADE;
 
 CREATE TYPE connector_type AS ENUM ('github', 'zoho');
-CREATE TYPE issue_type AS ENUM ('screenshot', 'recording');
+CREATE TYPE snap_type AS ENUM ('screenshot', 'recording');
 CREATE TYPE sync_status AS ENUM ('local', 'synced', 'syncing', 'failed');
 CREATE TYPE sync_type AS ENUM ('push', 'pull', 'full');
 CREATE TYPE sync_job_status AS ENUM ('in_progress', 'completed', 'failed');
@@ -88,19 +90,20 @@ CREATE TABLE connectors (
   enabled BOOLEAN DEFAULT true,
   config JSONB NOT NULL DEFAULT '{}',
   last_sync_at TIMESTAMPTZ,
+  deleted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(workspace_id, name)
 );
 
--- Issues: Screenshots and recordings (workspace-scoped)
-CREATE TABLE issues (
+-- Snaps: Screenshots and recordings (workspace-scoped)
+CREATE TABLE snaps (
   id TEXT PRIMARY KEY,
   workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   created_by UUID NOT NULL REFERENCES auth.users(id),
   title TEXT NOT NULL,
   description TEXT,
-  type issue_type NOT NULL,
+  type snap_type NOT NULL,
   timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   file_path TEXT,
   thumbnail_path TEXT,
@@ -129,6 +132,15 @@ CREATE TABLE sync_history (
   CONSTRAINT valid_counts CHECK (synced_count >= 0 AND failed_count >= 0 AND total_count >= 0)
 );
 
+-- Onboarding Progress: Track user's onboarding step
+CREATE TABLE onboarding_progress (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
+  current_step INTEGER NOT NULL DEFAULT 1,
+  is_complete BOOLEAN DEFAULT false,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ============================================================================
 -- ENABLE ROW LEVEL SECURITY
 -- ============================================================================
@@ -137,30 +149,80 @@ ALTER TABLE tenants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workspaces ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workspace_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE connectors ENABLE ROW LEVEL SECURITY;
-ALTER TABLE issues ENABLE ROW LEVEL SECURITY;
+ALTER TABLE snaps ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sync_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE onboarding_progress ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================================
 -- CREATE RLS POLICIES
 -- ============================================================================
 
--- Tenants: Owner can do all, members can read
+-- Tenants: Owner or admin can do all, members can read
 CREATE POLICY "tenant_owner_all" ON tenants
   FOR ALL USING (auth.uid() = owner_id)
   WITH CHECK (auth.uid() = owner_id);
 
-CREATE POLICY "tenant_member_read" ON tenants
-  FOR SELECT USING (
+CREATE POLICY "tenant_admin_all" ON tenants
+  FOR ALL USING (
     EXISTS (
-      SELECT 1 FROM workspaces
-      WHERE tenant_id = tenants.id AND created_by = auth.uid()
+      SELECT 1 FROM workspaces w
+      INNER JOIN workspace_members wm ON w.id = wm.workspace_id
+      WHERE w.tenant_id = tenants.id
+      AND wm.user_id = auth.uid()
+      AND wm.role = 'admin'
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM workspaces w
+      INNER JOIN workspace_members wm ON w.id = wm.workspace_id
+      WHERE w.tenant_id = tenants.id
+      AND wm.user_id = auth.uid()
+      AND wm.role = 'admin'
     )
   );
 
--- Workspaces: Creator can do all, others read via anonymous
+CREATE POLICY "tenant_member_read" ON tenants
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1 FROM workspaces w
+      INNER JOIN workspace_members wm ON w.id = wm.workspace_id
+      WHERE w.tenant_id = tenants.id AND wm.user_id = auth.uid()
+    )
+  );
+
+-- Workspaces: Creator or admin can do all, members can read
 CREATE POLICY "workspace_creator_all" ON workspaces
   FOR ALL USING (created_by = auth.uid())
   WITH CHECK (created_by = auth.uid());
+
+CREATE POLICY "workspace_admin_all" ON workspaces
+  FOR ALL USING (
+    EXISTS (
+      SELECT 1 FROM workspace_members
+      WHERE workspace_id = workspaces.id
+      AND user_id = auth.uid()
+      AND role = 'admin'
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM workspace_members
+      WHERE workspace_id = workspaces.id
+      AND user_id = auth.uid()
+      AND role = 'admin'
+    )
+  );
+
+-- Allow members to read their workspaces
+CREATE POLICY "workspace_member_read" ON workspaces
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1 FROM workspace_members
+      WHERE workspace_id = workspaces.id
+      AND user_id = auth.uid()
+    )
+  );
 
 -- Allow anonymous/public read for testing
 CREATE POLICY "workspace_public_read" ON workspaces
@@ -182,12 +244,12 @@ CREATE POLICY "workspace_member_admin_update" ON workspace_members
 CREATE POLICY "workspace_member_admin_delete" ON workspace_members
   FOR DELETE USING (true);
 
--- Issues: Creator can do all, public read for testing
-CREATE POLICY "issue_creator_all" ON issues
+-- Snaps: Creator can do all, public read for testing
+CREATE POLICY "snap_creator_all" ON snaps
   FOR ALL USING (created_by = auth.uid())
   WITH CHECK (created_by = auth.uid());
 
-CREATE POLICY "issue_public_read" ON issues
+CREATE POLICY "snap_public_read" ON snaps
   FOR SELECT USING (true);
 
 -- Connectors: Creator can do all, public read
@@ -205,6 +267,15 @@ CREATE POLICY "sync_history_creator_all" ON sync_history
 
 CREATE POLICY "sync_history_public_read" ON sync_history
   FOR SELECT USING (true);
+
+-- Onboarding Progress: User can manage their own progress, admin service can manage all
+CREATE POLICY "onboarding_progress_user_all" ON onboarding_progress
+  FOR ALL USING (user_id = auth.uid())
+  WITH CHECK (user_id = auth.uid());
+
+CREATE POLICY "onboarding_progress_admin_all" ON onboarding_progress
+  FOR ALL USING (true)
+  WITH CHECK (true);
 
 -- ============================================================================
 -- CREATE INDEXES FOR PERFORMANCE
@@ -227,17 +298,20 @@ CREATE INDEX idx_connectors_workspace_id ON connectors(workspace_id);
 CREATE INDEX idx_connectors_type ON connectors(type);
 CREATE INDEX idx_connectors_workspace_type ON connectors(workspace_id, type);
 
--- Issue indexes
-CREATE INDEX idx_issues_workspace_id ON issues(workspace_id);
-CREATE INDEX idx_issues_sync_status ON issues(sync_status);
-CREATE INDEX idx_issues_timestamp ON issues(timestamp DESC);
-CREATE INDEX idx_issues_workspace_timestamp ON issues(workspace_id, timestamp DESC);
-CREATE INDEX idx_issues_created_by ON issues(created_by);
+-- Snap indexes
+CREATE INDEX idx_snaps_workspace_id ON snaps(workspace_id);
+CREATE INDEX idx_snaps_sync_status ON snaps(sync_status);
+CREATE INDEX idx_snaps_timestamp ON snaps(timestamp DESC);
+CREATE INDEX idx_snaps_workspace_timestamp ON snaps(workspace_id, timestamp DESC);
+CREATE INDEX idx_snaps_created_by ON snaps(created_by);
 
 -- Sync history indexes
 CREATE INDEX idx_sync_history_workspace_id ON sync_history(workspace_id);
 CREATE INDEX idx_sync_history_started_at ON sync_history(started_at DESC);
 CREATE INDEX idx_sync_history_workspace_status ON sync_history(workspace_id, status);
+
+-- Onboarding progress indexes
+CREATE INDEX idx_onboarding_progress_user_id ON onboarding_progress(user_id);
 
 -- ============================================================================
 -- NOTES FOR MANUAL SETUP
@@ -248,21 +322,21 @@ CREATE INDEX idx_sync_history_workspace_status ON sync_history(workspace_id, sta
   Hierarchy:
     Tenant (Company/Org)
       └─ Workspace (Project)
-         └─ Issues (Screenshots/Recordings)
+         └─ Snaps (Screenshots/Recordings)
          └─ Connectors (GitHub/Zoho)
          └─ Team Members (Users with Roles)
 
   USER ROLES:
     - admin:  Full control of workspace, can manage team members
-    - pm:     Can create/edit workspaces, manage connectors, review issues
-    - qa:     Can create issues, run tests, review
-    - dev:    Can create issues, submit code/work
-    - client: View-only access to issues and reports
+    - pm:     Can create/edit workspaces, manage connectors, review snaps
+    - qa:     Can create snaps, run tests, review
+    - dev:    Can create snaps, submit code/work
+    - client: View-only access to snaps and reports
 
   ROW LEVEL SECURITY (RLS):
     - Tenants: Owner has full access, members can view
     - Workspaces: Members can view, admin/PM can edit
-    - Issues: Members can view, creator/admin/PM can edit
+    - Snaps: Members can view, creator/admin/PM can edit
     - Connectors: Members can view, admin/PM can manage
     - Workspace Members: Only admins can manage team
 
