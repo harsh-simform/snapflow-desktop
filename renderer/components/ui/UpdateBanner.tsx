@@ -37,6 +37,11 @@ export function UpdateBanner() {
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
+    // Guard: API might not be available on initial render
+    if (!window.api?.onUpdateStatus) {
+      return;
+    }
+
     const removeListener = window.api.onUpdateStatus(
       (updateStatus: UpdateStatus) => {
         const { event, data } = updateStatus;
