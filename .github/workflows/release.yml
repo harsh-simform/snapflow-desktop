@@ -101,18 +101,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Create .env file
+        run: |
+          cat > .env << 'EOF'
+          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GITHUB_CLIENT_ID=${{ secrets.CLIENT_ID }}
+          GITHUB_CLIENT_SECRET=${{ secrets.CLIENT_SECRET }}
+          ZOHO_CLIENT_ID=${{ secrets.ZOHO_CLIENT_ID }}
+          ZOHO_CLIENT_SECRET=${{ secrets.ZOHO_CLIENT_SECRET }}
+          NODE_ENV=production
+          EOF
+
       # Run build (same script for all platforms)
       - name: Build App
         run: npm run build:pack
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          GITHUB_CLIENT_ID: ${{ secrets.CLIENT_ID }}
-          GITHUB_CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
-          ZOHO_CLIENT_ID: ${{ secrets.ZOHO_CLIENT_ID }}
-          ZOHO_CLIENT_SECRET: ${{ secrets.ZOHO_CLIENT_SECRET }}
-          NODE_ENV: production
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # Upload platform-specific build outputs
