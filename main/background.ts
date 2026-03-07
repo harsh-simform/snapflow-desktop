@@ -12,6 +12,7 @@ import { issueService } from "./services/issues";
 import { captureService } from "./services/capture";
 import { connectorService } from "./services/connectors";
 import { updaterService } from "./services/updater";
+import { autoUpdater } from "electron-updater";
 import { syncService } from "./services/sync";
 import { tenantService } from "./services/tenant";
 import { workspaceService } from "./services/workspace";
@@ -127,6 +128,17 @@ let pendingRecording: {
   issueId?: string;
 } | null = null;
 
+// macOS permission handling
+let lastPermissionCheckTime = 0;
+let pendingCaptureRetry: {
+  mode: "fullscreen" | "window" | "region" | "all-screens" | "specific-screen";
+  screenId?: string;
+} | null = null;
+
+// Update tracking
+let updateAvailable = false;
+let availableVersion = "";
+
 if (isProd) {
   serve({ directory: "app" });
 } else {
@@ -238,6 +250,19 @@ async function createMainWindow() {
     await navigateTo("/500").catch((e) =>
       log.error("[Window] Failed to load error page:", e)
     );
+  }
+
+  // Handle window focus event - retry pending capture if permission may have been granted
+  if (process.platform === "darwin") {
+    mainWindow.on("focus", async () => {
+      log.info("[Window] Window focused");
+      if (pendingCaptureRetry) {
+        log.info("[Window] User returned to window with pending capture");
+        // Give a moment for permission to be recognized
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        await retryPendingCapture();
+      }
+    });
   }
 
   return mainWindow;
@@ -402,12 +427,26 @@ function updateTrayMenu() {
   //   };
   // }
 
+  const menuItems: electron.MenuItemConstructorOptions[] = [];
+
+  // Add update notification at the top if update is available
+  if (updateAvailable) {
+    menuItems.push({
+      label: `📦 Update Available (v${availableVersion})`,
+      enabled: false, // Make it look like a label
+    });
+    menuItems.push({ type: "separator" });
+  }
+
+  // Add capture menu items
+  menuItems.push(...captureMenuItems);
+  menuItems.push({ type: "separator" });
+
+  // Recording feature disabled for now - code preserved for future re-enablement
+  // if (recordingState === "recording") { ... }
+
   const contextMenu = Menu.buildFromTemplate([
-    ...captureMenuItems,
-    { type: "separator" },
-    // Recording feature disabled for now - code preserved for future re-enablement
-    // recordingMenuItem,
-    // { type: "separator" },
+    ...menuItems,
     {
       label: "View My Snaps",
       click: async () => {
@@ -481,6 +520,77 @@ function updateTrayMenu() {
   ]);
 
   tray.setContextMenu(contextMenu);
+}
+
+/**
+ * Handle macOS screen recording permission request flow
+ * Shows dialog to user and opens System Settings if requested
+ * Returns true if user clicked "Open System Settings", false otherwise
+ */
+async function requestScreenRecordingPermission(
+  captureMode?:
+    | "fullscreen"
+    | "window"
+    | "region"
+    | "all-screens"
+    | "specific-screen",
+  screenId?: string
+): Promise<boolean> {
+  log.info("[Permission] Showing screen recording permission request dialog");
+
+  const result = await dialog.showMessageBox(mainWindow!, {
+    type: "warning",
+    title: "Screen Recording Permission Required",
+    message: "SnapFlow needs Screen Recording permission",
+    detail:
+      "To use screenshot and recording features, please grant Screen Recording permission in System Settings > Privacy & Security > Screen Recording, then completely quit and restart SnapFlow.\n\nNote: Simply closing the window won't work - you must fully quit the app (Cmd+Q) and restart it.",
+    buttons: ["Open System Settings", "Cancel"],
+    defaultId: 0,
+    cancelId: 1,
+  });
+
+  if (result.response === 0) {
+    // User clicked "Open System Settings"
+    log.info("[Permission] Opening System Settings for screen recording");
+    // Store pending capture to retry after app restart
+    if (captureMode) {
+      pendingCaptureRetry = { mode: captureMode, screenId };
+      log.info(
+        "[Permission] Stored pending capture for retry:",
+        pendingCaptureRetry
+      );
+    }
+    // Open System Settings to Screen Recording privacy settings
+    shell.openExternal(
+      "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+    );
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Attempt to retry a pending capture operation after permission may have been granted
+ */
+async function retryPendingCapture(): Promise<void> {
+  if (!pendingCaptureRetry) {
+    return;
+  }
+
+  log.info("[Permission] Retrying pending capture:", pendingCaptureRetry);
+  const { mode, screenId } = pendingCaptureRetry;
+  pendingCaptureRetry = null;
+
+  // Small delay to ensure permission check is fresh
+  await new Promise((resolve) => setTimeout(resolve, 500));
+
+  // Attempt the capture
+  try {
+    await handleScreenshotCapture(mode, screenId);
+  } catch (error) {
+    log.error("[Permission] Failed to retry capture:", error);
+  }
 }
 
 async function showMainWindow() {
@@ -693,25 +803,15 @@ async function handleScreenshotCapture(
   screenId?: string
 ) {
   try {
+    // Clear cache to get fresh permission status (user may have just granted permission)
+    captureService.clearPermissionCache();
     // Check permission first to avoid getting stuck in a loop
     const hasPermission = await captureService.checkScreenRecordingPermission();
     if (!hasPermission) {
       log.info("[Screenshot] No screen recording permission detected");
-      // Show dialog to user explaining they need to restart the app
-      const result = await dialog.showMessageBox(mainWindow!, {
-        type: "warning",
-        title: "Screen Recording Permission Required",
-        message: "SnapFlow needs Screen Recording permission",
-        detail:
-          "Please grant Screen Recording permission in System Settings > Privacy & Security > Screen Recording, then completely quit and restart SnapFlow.\n\nNote: Simply closing the window won't work - you must fully quit the app (Cmd+Q) and restart it.",
-        buttons: ["Open System Settings", "OK"],
-      });
-
-      if (result.response === 0) {
-        // Open System Settings to Screen Recording
-        shell.openExternal(
-          "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
-        );
+      if (process.platform === "darwin") {
+        // Use the new permission request flow on macOS
+        await requestScreenRecordingPermission(mode, screenId);
       }
       return;
     }
@@ -1165,6 +1265,11 @@ async function handleCheckForUpdates() {
       // Update is available - the updater service will handle the download and prompt
       log.info("[Tray] Update available:", result.updateInfo.version);
 
+      // Update global state to show in tray menu
+      updateAvailable = true;
+      availableVersion = result.updateInfo.version;
+      updateTrayMenu(); // Refresh tray menu to show update option
+
       // Show additional confirmation that download will start
       const { response } = await dialog.showMessageBox(mainWindow, {
         type: "info",
@@ -1179,6 +1284,10 @@ async function handleCheckForUpdates() {
         log.info("[Tray] User acknowledged update availability");
       }
     } else {
+      // No update available - clear the update state
+      updateAvailable = false;
+      availableVersion = "";
+      updateTrayMenu(); // Refresh tray menu
       // No update available - show a message to the user
       await dialog.showMessageBox(mainWindow, {
         type: "info",
@@ -1893,6 +2002,22 @@ if (app && app.requestSingleInstanceLock) {
       if (isProd && mainWindow) {
         updaterService.init();
         updaterService.setMainWindow(mainWindow);
+
+        // Hook into autoUpdater events to update tray menu
+        autoUpdater.on("update-available", (info) => {
+          log.info("[Update] Update available, version:", info.version);
+          updateAvailable = true;
+          availableVersion = info.version;
+          updateTrayMenu();
+        });
+
+        autoUpdater.on("update-not-available", () => {
+          log.info("[Update] Update not available");
+          updateAvailable = false;
+          availableVersion = "";
+          updateTrayMenu();
+        });
+
         // Check for updates 5 seconds after app starts
         // For unsigned builds, set SKIP_CODE_SIGNATURE_VERIFICATION=true to allow updates
         setTimeout(() => {
@@ -4157,8 +4282,20 @@ if (app && app.on) {
   // Handle activate event (macOS) - show window when clicking dock icon
   app.on("activate", async () => {
     log.info("[App] activate event - showing window");
+    // Clear permission cache in case user just granted screen recording permission
+    captureService.clearPermissionCache();
     if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) {
       await showMainWindow();
+    }
+
+    // Check if user just returned from System Settings after granting permission
+    if (process.platform === "darwin" && pendingCaptureRetry) {
+      log.info(
+        "[App] User returned from System Settings, checking if permission was granted"
+      );
+      // Give a brief moment for the system to recognize the new permission
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await retryPendingCapture();
     }
   });
 }
