@@ -731,18 +731,11 @@ async function handleScreenshotCapture(
     pendingScreenshot = { dataUrl, mode };
     log.info("[Tray] Screenshot stored in pendingScreenshot");
 
-    // Navigate to annotate page first (while hidden)
+    // Navigate to annotate page using client-side navigation (preserves app state)
     log.info("[Tray] Navigating to annotate page...");
-    try {
-      if (isProd) {
-        await mainWindow?.loadURL("app://./annotate");
-      } else {
-        const port = process.argv[2];
-        await mainWindow?.loadURL(`http://localhost:${port}/annotate`);
-      }
+    if (mainWindow && mainWindow.webContents) {
+      mainWindow.webContents.send("navigate", "/annotate");
       log.info("[Tray] Navigation complete");
-    } catch (err) {
-      log.error("[Tray] Navigation failed:", err);
     }
 
     // Then show and focus the window
@@ -2703,16 +2696,14 @@ function setupIPCHandlers() {
         pendingScreenshot = { dataUrl: result.dataUrl, mode };
         log.info("[IPC Capture] Screenshot stored in pendingScreenshot");
 
-        // Navigate to annotate page
+        // Navigate to annotate page using client-side navigation (preserves app state)
         mainWindow?.show();
-        if (isProd) {
-          await mainWindow?.loadURL("app://./annotate");
-        } else {
-          const port = process.argv[2];
-          await mainWindow?.loadURL(`http://localhost:${port}/annotate`);
+        mainWindow?.focus();
+        if (mainWindow && mainWindow.webContents) {
+          mainWindow.webContents.send("navigate", "/annotate");
         }
 
-        // After page has loaded, also send the screenshot via IPC event as a
+        // Also send the screenshot via IPC event as a
         // reliable backup in case the renderer's getPendingScreenshot fires
         // before pendingScreenshot was set (race condition safeguard)
         mainWindow?.webContents.send("screenshot-captured", {
@@ -2729,6 +2720,7 @@ function setupIPCHandlers() {
           windowCaptureOverlay = null;
         }
         mainWindow?.show();
+        mainWindow?.focus();
         const errorMessage =
           error instanceof Error
             ? error.message
@@ -2838,16 +2830,14 @@ function setupIPCHandlers() {
       pendingScreenshot = { dataUrl: result.dataUrl, mode: "window" };
       log.info("[Window Capture] Stored pending screenshot");
 
-      // Navigate to annotate page
+      // Navigate to annotate page using client-side navigation (preserves app state)
       log.info(
         "[Window Capture] Showing main window and navigating to annotate page..."
       );
       mainWindow?.show();
-      if (isProd) {
-        await mainWindow?.loadURL("app://./annotate");
-      } else {
-        const port = process.argv[2];
-        await mainWindow?.loadURL(`http://localhost:${port}/annotate`);
+      mainWindow?.focus();
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send("navigate", "/annotate");
       }
       log.info("[Window Capture] Navigation complete");
 
@@ -2856,6 +2846,7 @@ function setupIPCHandlers() {
       log.error("[Window Capture] Error:", error);
       // Show main window even on error
       mainWindow?.show();
+      mainWindow?.focus();
       const errorMessage =
         error instanceof Error ? error.message : "An unexpected error occurred";
       log.error("IPC Handler error:", error);
@@ -2870,6 +2861,7 @@ function setupIPCHandlers() {
       windowCaptureOverlay = null;
     }
     mainWindow?.show();
+    mainWindow?.focus();
     return { success: true };
   });
 
