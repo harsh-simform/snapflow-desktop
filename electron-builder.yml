@@ -9,6 +9,7 @@ files:
     filter:
       - package.json
       - app
+      - .env
       - node_modules/**/*
 
 # Extra resources that should be copied to app.asar.unpacked or Resources
