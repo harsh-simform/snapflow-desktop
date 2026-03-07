@@ -11,8 +11,7 @@ import { authService } from "./services/auth";
 import { issueService } from "./services/issues";
 import { captureService } from "./services/capture";
 import { connectorService } from "./services/connectors";
-import { updaterService } from "./services/updater";
-import { autoUpdater } from "electron-updater";
+import { updateElectronApp } from "update-electron-app";
 import { syncService } from "./services/sync";
 import { tenantService } from "./services/tenant";
 import { workspaceService } from "./services/workspace";
@@ -110,7 +109,6 @@ const appSettingsStore = new Store({
 
 // State tracking for tray actions to prevent race conditions
 let isShowingWindow = false;
-let isCheckingForUpdates = false;
 
 // Tray icon manager and recording state
 let trayIconManager: TrayIconManager | null = null;
@@ -134,10 +132,6 @@ let pendingCaptureRetry: {
   mode: "fullscreen" | "window" | "region" | "all-screens" | "specific-screen";
   screenId?: string;
 } | null = null;
-
-// Update tracking
-let updateAvailable = false;
-let availableVersion = "";
 
 if (isProd) {
   serve({ directory: "app" });
@@ -429,15 +423,6 @@ function updateTrayMenu() {
 
   const menuItems: electron.MenuItemConstructorOptions[] = [];
 
-  // Add update notification at the top if update is available
-  if (updateAvailable) {
-    menuItems.push({
-      label: `📦 Update Available (v${availableVersion})`,
-      enabled: false, // Make it look like a label
-    });
-    menuItems.push({ type: "separator" });
-  }
-
   // Add capture menu items
   menuItems.push(...captureMenuItems);
   menuItems.push({ type: "separator" });
@@ -497,13 +482,6 @@ function updateTrayMenu() {
             "Failed to open your snaps. Please try again or restart the application."
           );
         }
-      },
-    },
-    { type: "separator" },
-    {
-      label: "Check for Updates",
-      click: async () => {
-        await handleCheckForUpdates();
       },
     },
     { type: "separator" },
@@ -1198,168 +1176,6 @@ async function handleCancelRecording() {
   mainWindow?.show();
 }
 
-async function handleCheckForUpdates() {
-  // Prevent concurrent update checks
-  if (isCheckingForUpdates) {
-    log.info(
-      "[Tray] Update check already in progress, skipping duplicate request"
-    );
-    return;
-  }
-
-  isCheckingForUpdates = true;
-  let checkingDialog: Promise<electron.MessageBoxReturnValue> | null = null;
-
-  try {
-    log.info("[Tray] Checking for updates...");
-
-    // Verify main window exists
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      log.error("[Tray] Main window not available for update check");
-      // Attempt to recreate window
-      await createMainWindow();
-
-      if (!mainWindow) {
-        throw new Error("Unable to create application window");
-      }
-    }
-
-    // Check if in development mode
-    if (process.env.NODE_ENV === "development") {
-      log.info("[Tray] Skipping update check in development mode");
-      await dialog.showMessageBox(mainWindow, {
-        type: "info",
-        title: "Development Mode",
-        message: "Update check disabled in development mode",
-        detail:
-          "Automatic updates are only available in production builds. Please build and install the production version to test updates.",
-        buttons: ["OK"],
-      });
-      return;
-    }
-
-    // Show a loading dialog while checking
-    checkingDialog = dialog.showMessageBox(mainWindow, {
-      type: "info",
-      title: "Checking for Updates",
-      message: "Checking for updates...",
-      detail: "Please wait while we check for the latest version.",
-      buttons: [],
-    });
-
-    // Set a timeout for the update check (30 seconds)
-    const timeoutPromise = new Promise<null>((_, reject) => {
-      setTimeout(() => reject(new Error("Update check timed out")), 30000);
-    });
-
-    // Check for updates with timeout
-    const result = await Promise.race([
-      updaterService.checkForUpdates(),
-      timeoutPromise,
-    ]);
-
-    // Close the loading dialog
-    await checkingDialog;
-
-    if (result && result.updateInfo) {
-      // Update is available - the updater service will handle the download and prompt
-      log.info("[Tray] Update available:", result.updateInfo.version);
-
-      // Update global state to show in tray menu
-      updateAvailable = true;
-      availableVersion = result.updateInfo.version;
-      updateTrayMenu(); // Refresh tray menu to show update option
-
-      // Show additional confirmation that download will start
-      const { response } = await dialog.showMessageBox(mainWindow, {
-        type: "info",
-        title: "Update Available",
-        message: `Version ${result.updateInfo.version} is available`,
-        detail: `Current version: ${app.getVersion()}\nNew version: ${result.updateInfo.version}\n\nThe update will be downloaded automatically in the background.`,
-        buttons: ["OK"],
-        defaultId: 0,
-      });
-
-      if (response === 0) {
-        log.info("[Tray] User acknowledged update availability");
-      }
-    } else {
-      // No update available - clear the update state
-      updateAvailable = false;
-      availableVersion = "";
-      updateTrayMenu(); // Refresh tray menu
-      // No update available - show a message to the user
-      await dialog.showMessageBox(mainWindow, {
-        type: "info",
-        title: "No Updates Available",
-        message: "You're running the latest version!",
-        detail: `SnapFlow is up to date (version ${app.getVersion()}).`,
-        buttons: ["OK"],
-      });
-    }
-  } catch (error) {
-    log.error("[Tray] Failed to check for updates:", error);
-
-    // Close loading dialog if still open
-    if (checkingDialog) {
-      await checkingDialog.catch(() => {
-        /* ignore */
-      });
-    }
-
-    // Verify window still exists before showing error
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      log.error("[Tray] Window destroyed, cannot show error dialog");
-      return;
-    }
-
-    // Determine error type and provide specific guidance
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    let userMessage = "Failed to check for updates";
-    let detailMessage = "An unexpected error occurred. Please try again later.";
-
-    if (
-      errorMessage.includes("ENOTFOUND") ||
-      errorMessage.includes("ETIMEDOUT") ||
-      errorMessage.includes("timed out")
-    ) {
-      userMessage = "Connection Error";
-      detailMessage =
-        "Unable to connect to the update server. Please check your internet connection and try again.";
-    } else if (errorMessage.includes("EACCES")) {
-      userMessage = "Permission Error";
-      detailMessage =
-        "The application does not have permission to check for updates. Please check file permissions.";
-    } else if (errorMessage.includes("404")) {
-      userMessage = "Update Server Error";
-      detailMessage =
-        "Update information not found. This may be a development or pre-release build.";
-    } else if (errorMessage.includes("code signature")) {
-      userMessage = "Signature Verification Error";
-      detailMessage =
-        "Unable to verify update signature. Please download updates manually from GitHub.";
-    } else if (errorMessage.includes("Unable to create application window")) {
-      userMessage = "Application Error";
-      detailMessage =
-        "Unable to open the application window. Please restart SnapFlow.";
-      // Use showErrorBox as fallback when window creation fails
-      dialog.showErrorBox(userMessage, detailMessage);
-      return;
-    }
-
-    // Show error dialog
-    await dialog.showMessageBox(mainWindow, {
-      type: "error",
-      title: userMessage,
-      message: "Update Check Failed",
-      detail: detailMessage,
-      buttons: ["OK"],
-    });
-  } finally {
-    isCheckingForUpdates = false;
-  }
-}
-
 /**
  * Handle OAuth callback deep link (snapflow://auth/callback)
  *
@@ -1999,30 +1815,10 @@ if (app && app.requestSingleInstanceLock) {
       });
 
       // Initialize auto-updater (only in production)
-      if (isProd && mainWindow) {
-        updaterService.init();
-        updaterService.setMainWindow(mainWindow);
-
-        // Hook into autoUpdater events to update tray menu
-        autoUpdater.on("update-available", (info) => {
-          log.info("[Update] Update available, version:", info.version);
-          updateAvailable = true;
-          availableVersion = info.version;
-          updateTrayMenu();
-        });
-
-        autoUpdater.on("update-not-available", () => {
-          log.info("[Update] Update not available");
-          updateAvailable = false;
-          availableVersion = "";
-          updateTrayMenu();
-        });
-
-        // Check for updates 5 seconds after app starts
-        // For unsigned builds, set SKIP_CODE_SIGNATURE_VERIFICATION=true to allow updates
-        setTimeout(() => {
-          updaterService.checkForUpdates();
-        }, 5000);
+      if (isProd) {
+        // Use update-electron-app for simple auto-updates
+        updateElectronApp();
+        log.info("[Update] Auto-updater initialized");
       }
     })();
   }
@@ -4127,105 +3923,6 @@ function setupIPCHandlers() {
       return mainWindow.isMaximized();
     }
     return false;
-  });
-
-  // Update handlers
-  ipcMain.handle("update:check", async () => {
-    try {
-      const result = await updaterService.checkForUpdates();
-      return { success: true, data: result };
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "An unexpected error occurred";
-      log.error("IPC Handler error:", error);
-      return { success: false, error: errorMessage };
-    }
-  });
-
-  ipcMain.handle("update:check-manual", async () => {
-    try {
-      log.info("[IPC] Manual update check requested");
-      const result = await updaterService.checkForUpdates();
-
-      if (result && result.updateInfo) {
-        log.info("[IPC] Update available:", result.updateInfo.version);
-        return {
-          success: true,
-          data: {
-            updateAvailable: true,
-            version: result.updateInfo.version,
-            releaseDate: result.updateInfo.releaseDate,
-          },
-        };
-      } else {
-        log.info("[IPC] No update available");
-        return {
-          success: true,
-          data: {
-            updateAvailable: false,
-            currentVersion: app.getVersion(),
-          },
-        };
-      }
-    } catch (error) {
-      log.error("[IPC] Manual update check failed:", error);
-      const errorMessage =
-        error instanceof Error ? error.message : "An unexpected error occurred";
-      log.error("IPC Handler error:", error);
-      return { success: false, error: errorMessage };
-    }
-  });
-
-  ipcMain.handle("update:download", async () => {
-    try {
-      await updaterService.downloadUpdate();
-      return { success: true };
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "An unexpected error occurred";
-      log.error("IPC Handler error:", error);
-      return { success: false, error: errorMessage };
-    }
-  });
-
-  ipcMain.handle("update:install", () => {
-    try {
-      updaterService.quitAndInstall();
-      return { success: true };
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "An unexpected error occurred";
-      log.error("IPC Handler error:", error);
-      return { success: false, error: errorMessage };
-    }
-  });
-
-  // Force install update even if signature verification fails (for development builds)
-  ipcMain.handle("update:force-install", () => {
-    try {
-      log.warn(
-        "[IPC] Force installing update (bypassing signature verification)"
-      );
-      updaterService.quitAndInstall();
-      return { success: true };
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "An unexpected error occurred";
-      log.error("IPC Handler error:", error);
-      return { success: false, error: errorMessage };
-    }
-  });
-
-  ipcMain.handle("update:get-info", () => {
-    try {
-      const info = updaterService.getUpdateInfo();
-      return { success: true, data: info };
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "An unexpected error occurred";
-      log.error("IPC Handler error:", error);
-      return { success: false, error: errorMessage };
-    }
   });
 
   // Debug handler to test screen capture directly
