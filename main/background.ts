@@ -11,7 +11,7 @@ import { authService } from "./services/auth";
 import { issueService } from "./services/issues";
 import { captureService } from "./services/capture";
 import { connectorService } from "./services/connectors";
-import { updateElectronApp } from "update-electron-app";
+import { updaterService } from "./services/updater";
 import { syncService } from "./services/sync";
 import { tenantService } from "./services/tenant";
 import { workspaceService } from "./services/workspace";
@@ -124,13 +124,6 @@ let pendingRecording: {
   duration: number;
   thumbnailPath?: string;
   issueId?: string;
-} | null = null;
-
-// macOS permission handling
-let lastPermissionCheckTime = 0;
-let pendingCaptureRetry: {
-  mode: "fullscreen" | "window" | "region" | "all-screens" | "specific-screen";
-  screenId?: string;
 } | null = null;
 
 if (isProd) {
@@ -246,18 +239,10 @@ async function createMainWindow() {
     );
   }
 
-  // Handle window focus event - retry pending capture if permission may have been granted
-  if (process.platform === "darwin") {
-    mainWindow.on("focus", async () => {
-      log.info("[Window] Window focused");
-      if (pendingCaptureRetry) {
-        log.info("[Window] User returned to window with pending capture");
-        // Give a moment for permission to be recognized
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        await retryPendingCapture();
-      }
-    });
-  }
+  // Handle window focus event
+  mainWindow.on("focus", async () => {
+    log.info("[Window] Window focused");
+  });
 
   return mainWindow;
 }
@@ -300,9 +285,8 @@ function createSystemTray() {
 }
 
 function registerGlobalShortcuts() {
-  // Register Cmd+Shift+5 (macOS) / Ctrl+Shift+5 (Windows/Linux) for Capture Area
-  const captureAreaShortcut =
-    process.platform === "darwin" ? "Command+Shift+5" : "Control+Shift+5";
+  // Register Ctrl+Shift+5 (Windows/Linux) for Capture Area
+  const captureAreaShortcut = "Control+Shift+5";
 
   const areaRegistered = globalShortcut.register(
     captureAreaShortcut,
@@ -320,9 +304,8 @@ function registerGlobalShortcuts() {
     log.error(`[Shortcuts] Failed to register ${captureAreaShortcut}`);
   }
 
-  // Register Cmd+Shift+3 (macOS) / Ctrl+Shift+3 (Windows/Linux) for Capture Full Screen
-  const captureFullScreenShortcut =
-    process.platform === "darwin" ? "Command+Shift+3" : "Control+Shift+3";
+  // Register Ctrl+Shift+3 (Windows/Linux) for Capture Full Screen
+  const captureFullScreenShortcut = "Control+Shift+3";
 
   const fullScreenRegistered = globalShortcut.register(
     captureFullScreenShortcut,
@@ -361,16 +344,14 @@ function updateTrayMenu() {
   const captureMenuItems: electron.MenuItemConstructorOptions[] = [
     {
       label: "Capture Full Screen",
-      accelerator:
-        process.platform === "darwin" ? "Command+Shift+3" : "Control+Shift+3",
+      accelerator: "Control+Shift+3",
       click: () => {
         handleScreenshotCapture("fullscreen");
       },
     },
     {
       label: "Capture Area",
-      accelerator:
-        process.platform === "darwin" ? "Command+Shift+5" : "Control+Shift+5",
+      accelerator: "Control+Shift+5",
       click: () => {
         handleScreenshotCapture("region");
       },
@@ -505,71 +486,6 @@ function updateTrayMenu() {
  * Shows dialog to user and opens System Settings if requested
  * Returns true if user clicked "Open System Settings", false otherwise
  */
-async function requestScreenRecordingPermission(
-  captureMode?:
-    | "fullscreen"
-    | "window"
-    | "region"
-    | "all-screens"
-    | "specific-screen",
-  screenId?: string
-): Promise<boolean> {
-  log.info("[Permission] Showing screen recording permission request dialog");
-
-  const result = await dialog.showMessageBox(mainWindow!, {
-    type: "warning",
-    title: "Screen Recording Permission Required",
-    message: "SnapFlow needs Screen Recording permission",
-    detail:
-      "To use screenshot and recording features, please grant Screen Recording permission in System Settings > Privacy & Security > Screen Recording, then completely quit and restart SnapFlow.\n\nNote: Simply closing the window won't work - you must fully quit the app (Cmd+Q) and restart it.",
-    buttons: ["Open System Settings", "Cancel"],
-    defaultId: 0,
-    cancelId: 1,
-  });
-
-  if (result.response === 0) {
-    // User clicked "Open System Settings"
-    log.info("[Permission] Opening System Settings for screen recording");
-    // Store pending capture to retry after app restart
-    if (captureMode) {
-      pendingCaptureRetry = { mode: captureMode, screenId };
-      log.info(
-        "[Permission] Stored pending capture for retry:",
-        pendingCaptureRetry
-      );
-    }
-    // Open System Settings to Screen Recording privacy settings
-    shell.openExternal(
-      "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
-    );
-    return true;
-  }
-
-  return false;
-}
-
-/**
- * Attempt to retry a pending capture operation after permission may have been granted
- */
-async function retryPendingCapture(): Promise<void> {
-  if (!pendingCaptureRetry) {
-    return;
-  }
-
-  log.info("[Permission] Retrying pending capture:", pendingCaptureRetry);
-  const { mode, screenId } = pendingCaptureRetry;
-  pendingCaptureRetry = null;
-
-  // Small delay to ensure permission check is fresh
-  await new Promise((resolve) => setTimeout(resolve, 500));
-
-  // Attempt the capture
-  try {
-    await handleScreenshotCapture(mode, screenId);
-  } catch (error) {
-    log.error("[Permission] Failed to retry capture:", error);
-  }
-}
 
 async function showMainWindow() {
   // Prevent concurrent calls to showMainWindow
@@ -626,14 +542,6 @@ async function createWindowCaptureOverlay() {
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width, height, x, y } = primaryDisplay.bounds;
 
-  // Check permission before attempting capture
-  const hasPermission = await captureService.checkScreenRecordingPermission();
-  if (!hasPermission) {
-    log.info("[Window Capture] No screen recording permission");
-    mainWindow?.show();
-    return;
-  }
-
   // Capture screenshot first to use as background
   const { dataUrl } = await captureService.captureScreenshot({
     mode: "fullscreen",
@@ -668,11 +576,6 @@ async function createWindowCaptureOverlay() {
     visibleOnFullScreen: true,
   });
 
-  // Ensure dock icon stays visible on macOS
-  if (process.platform === "darwin") {
-    app.dock?.show();
-  }
-
   // Load the window capture page
   if (isProd) {
     await windowCaptureOverlay.loadURL("app://./window-capture");
@@ -702,19 +605,6 @@ async function createWindowCaptureOverlay() {
 
 async function createAreaCaptureOverlay() {
   const { screen } = electron;
-
-  // Check permission before attempting capture
-  const hasPermission = await captureService.checkScreenRecordingPermission();
-  if (!hasPermission) {
-    log.info("[Area Capture] No screen recording permission");
-    mainWindow?.show();
-    return;
-  }
-
-  // Ensure dock icon stays visible on macOS
-  if (process.platform === "darwin") {
-    app.dock?.show();
-  }
 
   // For now, use primary display - in future, could show overlay on all displays
   const primaryDisplay = screen.getPrimaryDisplay();
@@ -781,26 +671,8 @@ async function handleScreenshotCapture(
   screenId?: string
 ) {
   try {
-    // Clear cache to get fresh permission status (user may have just granted permission)
-    captureService.clearPermissionCache();
-    // Check permission first to avoid getting stuck in a loop
-    const hasPermission = await captureService.checkScreenRecordingPermission();
-    if (!hasPermission) {
-      log.info("[Screenshot] No screen recording permission detected");
-      if (process.platform === "darwin") {
-        // Use the new permission request flow on macOS
-        await requestScreenRecordingPermission(mode, screenId);
-      }
-      return;
-    }
-
     // For window mode, create a transparent overlay for window selection
     if (mode === "window") {
-      // Keep app in dock even when hiding main window
-      if (process.platform === "darwin") {
-        app.dock?.show();
-      }
-
       mainWindow?.hide();
 
       // Wait a bit for window to hide
@@ -812,11 +684,6 @@ async function handleScreenshotCapture(
     }
 
     if (mode === "region") {
-      // Keep app in dock even when hiding main window
-      if (process.platform === "darwin") {
-        app.dock?.show();
-      }
-
       mainWindow?.hide();
 
       // Wait a bit for window to hide (reduced delay for smoother UX)
@@ -829,11 +696,6 @@ async function handleScreenshotCapture(
 
     // For fullscreen, all-screens, or specific-screen, capture immediately
     log.info("[Tray] Starting", mode, "capture...");
-
-    // Keep app in dock even when hiding main window
-    if (process.platform === "darwin") {
-      app.dock?.show();
-    }
 
     mainWindow?.hide();
     await new Promise((resolve) => setTimeout(resolve, 300));
@@ -888,27 +750,6 @@ async function handleScreenshotCapture(
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function handleScreenRecording() {
   try {
-    // Check permission first
-    const hasPermission = await captureService.checkScreenRecordingPermission();
-    if (!hasPermission) {
-      log.info("[Recording] No screen recording permission detected");
-      const result = await dialog.showMessageBox(mainWindow!, {
-        type: "warning",
-        title: "Screen Recording Permission Required",
-        message: "SnapFlow needs Screen Recording permission",
-        detail:
-          "Please grant Screen Recording permission in System Settings > Privacy & Security > Screen Recording, then completely quit and restart SnapFlow.\n\nNote: Simply closing the window won't work - you must fully quit the app (Cmd+Q) and restart it.",
-        buttons: ["Open System Settings", "OK"],
-      });
-
-      if (result.response === 0) {
-        shell.openExternal(
-          "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
-        );
-      }
-      return;
-    }
-
     // Create area selector for recording
     await createRecordingAreaSelector();
   } catch (error) {
@@ -1000,19 +841,6 @@ async function createRecordingAreaSelector() {
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width, height, x, y } = primaryDisplay.bounds;
 
-  // Check permission
-  const hasPermission = await captureService.checkScreenRecordingPermission();
-  if (!hasPermission) {
-    log.info("[Recording] No screen recording permission");
-    mainWindow?.show();
-    dialog.showErrorBox(
-      "Permission Required",
-      "Screen recording permission is required. Please grant permission in System Settings and restart SnapFlow."
-    );
-    recordingState = "idle";
-    return;
-  }
-
   recordingAreaSelector = new BrowserWindow({
     width,
     height,
@@ -1037,11 +865,6 @@ async function createRecordingAreaSelector() {
   recordingAreaSelector.setVisibleOnAllWorkspaces(true, {
     visibleOnFullScreen: true,
   });
-
-  // Ensure dock icon stays visible
-  if (process.platform === "darwin") {
-    app.dock?.show();
-  }
 
   // Load recording area selector
   if (isProd) {
@@ -1634,26 +1457,6 @@ if (app && app.requestSingleInstanceLock) {
     (async () => {
       await app.whenReady();
 
-      // Set application icon for dock (macOS) and taskbar
-      const iconPath = isProd
-        ? path.join(process.resourcesPath, "icon.png")
-        : path.join(__dirname, "../resources/icon.png");
-
-      const appIcon = nativeImage.createFromPath(iconPath);
-      if (process.platform === "darwin") {
-        app.dock?.setIcon(appIcon);
-        // Keep app in dock permanently - never hide
-        // This prevents the dock icon from disappearing during overlay/capture
-        app.dock?.show();
-      }
-
-      // Prevent app from hiding from dock when all windows are closed
-      // This ensures the dock icon is always visible
-      if (process.platform === "darwin") {
-        // Force the app to always show in dock, even with no windows
-        app.dock?.show();
-      }
-
       // Initialize secure config (must run after app.whenReady() — electron.safeStorage requires app ready)
       // Production: loads encrypted secrets from store (or bootstraps from JSON on first launch)
       // Development: no-op (env vars loaded via dotenv from project root)
@@ -1716,69 +1519,8 @@ if (app && app.requestSingleInstanceLock) {
       // Initialize storage
       await storageManager.ensureDirectories();
 
-      // Set custom application menu (remove File and Help)
-      if (process.platform === "darwin") {
-        const template: electron.MenuItemConstructorOptions[] = [
-          {
-            label: app.name,
-            submenu: [
-              { role: "about" },
-              { type: "separator" },
-              { role: "services" },
-              { type: "separator" },
-              { role: "hide" },
-              { role: "hideOthers" },
-              { role: "unhide" },
-              { type: "separator" },
-              { role: "quit" },
-            ],
-          },
-          {
-            label: "Edit",
-            submenu: [
-              { role: "undo" },
-              { role: "redo" },
-              { type: "separator" },
-              { role: "cut" },
-              { role: "copy" },
-              { role: "paste" },
-              { role: "pasteAndMatchStyle" },
-              { role: "delete" },
-              { role: "selectAll" },
-            ],
-          },
-          {
-            label: "View",
-            submenu: [
-              { role: "reload" },
-              { role: "forceReload" },
-              { role: "toggleDevTools" },
-              { type: "separator" },
-              { role: "resetZoom" },
-              { role: "zoomIn" },
-              { role: "zoomOut" },
-              { type: "separator" },
-              { role: "togglefullscreen" },
-            ],
-          },
-          {
-            label: "Window",
-            submenu: [
-              { role: "minimize" },
-              { role: "zoom" },
-              { type: "separator" },
-              { role: "front" },
-              { type: "separator" },
-              { role: "window" },
-            ],
-          },
-        ];
-        const menu = Menu.buildFromTemplate(template);
-        Menu.setApplicationMenu(menu);
-      } else {
-        // On Windows/Linux, remove the menu bar entirely
-        Menu.setApplicationMenu(null);
-      }
+      // Remove the menu bar entirely for Windows/Linux
+      Menu.setApplicationMenu(null);
 
       // Create main window
       await createMainWindow();
@@ -1816,8 +1558,16 @@ if (app && app.requestSingleInstanceLock) {
 
       // Initialize auto-updater (only in production)
       if (isProd) {
-        // Use update-electron-app for simple auto-updates
-        updateElectronApp();
+        updaterService.init();
+        updaterService.setMainWindow(mainWindow);
+        // Check for updates after a 3-second delay (don't block startup)
+        setTimeout(() => {
+          updaterService
+            .checkForUpdates()
+            .catch((err) =>
+              log.warn("[Update] Background check failed:", err.message)
+            );
+        }, 3000);
         log.info("[Update] Auto-updater initialized");
       }
     })();
@@ -3925,6 +3675,73 @@ function setupIPCHandlers() {
     return false;
   });
 
+  // Update handlers
+  ipcMain.handle("update:check", async () => {
+    try {
+      const result = await updaterService.checkForUpdates();
+      const info = updaterService.getUpdateInfo();
+      return {
+        success: true,
+        data: {
+          updateAvailable: !!result?.updateInfo?.version,
+          version: result?.updateInfo?.version,
+          currentVersion: info.currentVersion,
+        },
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return { success: false, error: message };
+    }
+  });
+
+  ipcMain.handle("update:check-manual", async () => {
+    try {
+      const result = await updaterService.checkForUpdates();
+      const info = updaterService.getUpdateInfo();
+      return {
+        success: true,
+        data: {
+          updateAvailable: !!result?.updateInfo?.version,
+          version: result?.updateInfo?.version,
+          currentVersion: info.currentVersion,
+        },
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return { success: false, error: message };
+    }
+  });
+
+  ipcMain.handle("update:download", async () => {
+    try {
+      await updaterService.downloadUpdate();
+      return { success: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return { success: false, error: message };
+    }
+  });
+
+  ipcMain.handle("update:install", async () => {
+    try {
+      updaterService.quitAndInstall();
+      return { success: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return { success: false, error: message };
+    }
+  });
+
+  ipcMain.handle("update:get-info", async () => {
+    try {
+      const info = updaterService.getUpdateInfo();
+      return { success: true, data: info };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return { success: false, error: message };
+    }
+  });
+
   // Debug handler to test screen capture directly
   ipcMain.handle("debug:test-capture", async () => {
     try {
@@ -3979,20 +3796,8 @@ if (app && app.on) {
   // Handle activate event (macOS) - show window when clicking dock icon
   app.on("activate", async () => {
     log.info("[App] activate event - showing window");
-    // Clear permission cache in case user just granted screen recording permission
-    captureService.clearPermissionCache();
     if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) {
       await showMainWindow();
-    }
-
-    // Check if user just returned from System Settings after granting permission
-    if (process.platform === "darwin" && pendingCaptureRetry) {
-      log.info(
-        "[App] User returned from System Settings, checking if permission was granted"
-      );
-      // Give a brief moment for the system to recognize the new permission
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      await retryPendingCapture();
     }
   });
 }
